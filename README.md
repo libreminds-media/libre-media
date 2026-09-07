@@ -211,47 +211,101 @@ you if you missed one.
 
 ---
 
-## Letting volunteers upload
+## Access model
 
-The `tools` container runs as `PUID:PGID` from `.env`, never as root, so files
-it writes into `web/albums/` and `inbox/` stay owned by a real account.
-`make migrate-check` **fails** if either is unset or 0.
+Three roles, deliberately separated so a volunteer never needs docker access
+and no one needs root.
 
-This server is already set up as follows — reproduce it on any new server
-(it is also step 2b of MIGRATE.md):
+| Role | Account | Can do | Cannot do |
+|---|---|---|---|
+| **Service** | `libremedia` (uid/gid 1003) | owns every file; runs the containers | log in with a password (locked) |
+| **Volunteer** | their own account, in group `libremedia` | SFTP files into `inbox/` | publish, touch containers, read `.env` |
+| **Admin** | their own account + one sudoers rule | run `publish` as `libremedia` | nothing else via that rule |
+
+`libremedia` is a dedicated service account. Its home **is** `/home/libre-media`,
+its password is locked, and it is in the `docker` group. `PUID`/`PGID` in `.env`
+must be its uid/gid — `make migrate-check` fails if they do not match the owner
+of `web/albums/` and `inbox/`.
+
+> Because the service account's home is the repository, anything it writes to
+> its home lands inside the repo. `.gitignore` therefore excludes `.ssh/`,
+> `.bash_history`, `.cache/` and friends. **Do not remove those lines** —
+> `.ssh/` holds the deploy key.
+
+### Adding a volunteer
+
+Volunteers get a personal account added to the `libremedia` group, and SFTP
+access to `inbox/` only. They never get docker access and never run `publish`.
 
 ```bash
-# One-time, as root. This is the only thing this project creates outside
-# /home/libre-media, and it is a single line in /etc/group.
-groupadd -f mediateam
-getent group mediateam            # note the gid; here it was 1002
+# As root, once per volunteer:
+adduser --disabled-password --gecos "" alice
+usermod -aG libremedia alice          # they must log out and back in
 
-# Owner = the account that runs make; group = the shared volunteer group.
-chown -R 1000:1002 /home/libre-media/web/albums /home/libre-media/inbox
-
-# 2775 = group-writable + setgid. setgid is the important half: everything
-# created inside inherits `mediateam` instead of the creator's primary group,
-# so the next volunteer can still write to it.
-find /home/libre-media/web/albums /home/libre-media/inbox \
-     -type d -exec chmod 2775 {} +
-
-# Add each volunteer to the group (they must log out and back in):
-usermod -aG mediateam <username>
+# They upload over SFTP to:
+#   /home/libre-media/inbox/<year>-<event-name>/{album.yaml,photos/,videos/}
 ```
 
-Then in `.env`:
+`inbox/` and `web/albums/` are `2775` (group-writable + **setgid**). setgid is
+the important half: everything created inside inherits group `libremedia`
+rather than the creator's primary group, so the next volunteer can still write
+to it.
+
+To restrict a volunteer to SFTP with no shell, add to `/etc/ssh/sshd_config`:
 
 ```
-PUID=1000
-PGID=1002
+Match Group libremedia
+    ChrootDirectory /home/libre-media/inbox
+    ForceCommand internal-sftp
+    AllowTcpForwarding no
+    X11Forwarding no
 ```
 
-`cache-data/` is deliberately **not** included. The cache container chowns it to
-its own unprivileged `nginx` user at every start, so any ownership set here
-would be overwritten. It is disposable and never volunteer-facing.
+> `ChrootDirectory` requires the chroot target to be owned by **root** and not
+> group-writable, which conflicts with the `2775 libremedia:libremedia` that
+> volunteers need. Either drop `ChrootDirectory` and rely on group permissions,
+> or restructure with a root-owned parent. Decide before enabling this — it is
+> not currently configured.
 
-Volunteers only ever need write access to `inbox/`. Publishing is still run by
-someone with docker access.
+### Publishing (admin)
+
+Publishing is run **as the service account** so files stay owned by it:
+
+```bash
+sudo -u libremedia make publish SLUG=2025-kcd-bengaluru
+sudo -u libremedia make publish-dry SLUG=2025-kcd-bengaluru
+```
+
+To let a named admin do exactly that and nothing more, install this with
+`visudo -f /etc/sudoers.d/libre-media` (mode `0440`). **This is documentation;
+it is not installed on this server.**
+
+```sudoers
+# /etc/sudoers.d/libre-media
+# Let named admins run the gallery's publish commands as the service account.
+#
+# Scope note: `make` is a general-purpose program. This rule constrains the
+# TARGET but a determined user could still reach other make targets, and
+# `libremedia` is in the `docker` group, which is root-equivalent on this host.
+# Grant it only to people you would trust with root anyway.
+
+Cmnd_Alias LIBREMEDIA_PUBLISH = \
+    /usr/bin/make publish SLUG=*, \
+    /usr/bin/make publish-dry SLUG=*, \
+    /usr/bin/make index, \
+    /usr/bin/make backup, \
+    /usr/bin/make migrate-check
+
+%libremedia-admin ALL=(libremedia) NOPASSWD: LIBREMEDIA_PUBLISH
+```
+
+```bash
+groupadd -f libremedia-admin
+usermod -aG libremedia-admin alice
+```
+
+Note that `sudo -u libremedia make ...` runs make in the *caller's* working
+directory, so admins must `cd /home/libre-media` first.
 
 ---
 
@@ -288,50 +342,45 @@ before uploading photos of identifiable people.
 
 ---
 
-## Nightly backup
+## Scheduled jobs
 
-`make backup` copies `web/albums/*.json` and every `inbox/*/album.yaml` to
-`b2:<bucket>/_site/`. It uses `rclone copy`, never `sync`, so it can add and
-update but can never delete.
-
-Install it as a **user** crontab for the account in `PUID`, not root:
-
-```bash
-# As that user (uid 1000 here):
-crontab -e
-```
+Two entries in **root's** crontab (`sudo crontab -e`). They are the only things
+this project puts outside `/home/libre-media`.
 
 ```cron
-# libre-media — nightly album metadata backup to Backblaze B2.
-# The only entry this project needs outside /home/libre-media.
+# --- libre-media (photos.libreminds.org) -----------------------------------
+# Nightly: album metadata -> Backblaze B2. Uses `rclone copy`, never `sync`,
+# so it can add and update but can never delete.
+# The `cd` is required: cron starts in the user's home, and make must run
+# inside the project directory.
 17 3 * * * cd /home/libre-media && /usr/bin/make backup >> /home/libre-media/backup.log 2>&1
+#
+# Monthly (1st, 04:23): reclaim Docker build cache. This is the usual cause of
+# a full disk on this host -- it was 53GB at project setup. Build cache only:
+# no image, container or volume is touched.
+23 4 1 * * cd /home/libre-media && /usr/bin/docker builder prune -f >> /home/libre-media/prune.log 2>&1
 ```
 
-The `cd` is not optional — cron runs with the user's home as the working
-directory, and `make` must run inside the project. `03:17` rather than `03:00`
-keeps it off the hour with everything else on this box. `backup.log` is
-git-ignored.
+**Why root and not `libremedia`?** Both jobs need the Docker daemon. Running
+them from root's crontab avoids nothing — root already has that access — while
+running them as `libremedia` would add no isolation, since docker group
+membership is root-equivalent anyway. The backup writes only to B2 and to
+`backup.log`, and it creates no root-owned files in the project: verified by
+running the exact line from `/root` with an empty environment.
 
-**Prerequisite:** that user must be able to talk to the Docker daemon, because
-`make backup` runs `rclone` inside the `tools` container:
+`backup.log` and `prune.log` are git-ignored and are pre-created owned by
+`libremedia`, so a root-run job appends rather than taking them over.
 
-```bash
-usermod -aG docker <user>      # then the user must log out and back in
-```
-
-> **Understand what this grants.** Docker group membership is effectively root
-> on this host — a member can start a container that mounts `/`. If you are not
-> comfortable with that for the volunteer account, run the cron entry as root
-> instead (`sudo crontab -e`, same line). The backup writes only to B2 and to
-> `backup.log`, so running it as root is a defensible choice here; it just
-> leaves `backup.log` root-owned.
-
-Check it is working:
+### Checking the jobs work
 
 ```bash
 tail -20 /home/libre-media/backup.log
-make restore TARGET=.restore-check && diff -r web/albums .restore-check/web/albums
+sudo -u libremedia make restore TARGET=.restore-check
+diff -r /home/libre-media/web/albums /home/libre-media/.restore-check/web/albums
+rm -rf /home/libre-media/.restore-check
 ```
+
+Neither log rotates. They grow a few lines a night; revisit in a year.
 
 ---
 

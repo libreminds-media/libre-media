@@ -14,9 +14,28 @@ inbox/*
 
 # Nightly backup log (see the crontab line in README)
 backup.log
+prune.log
 
 # Restore scratch space
 .restore-check/
 
 __pycache__/
 *.pyc
+
+# ---------------------------------------------------------------------------
+# The libremedia service account's HOME IS THIS DIRECTORY, so anything the
+# account writes into its home lands inside the repository. Ignore it all.
+# .ssh/ in particular holds the deploy private key -- committing it to a
+# public repo would hand over write access to the repository.
+# ---------------------------------------------------------------------------
+.ssh/
+.bash_history
+.bash_logout
+.bashrc
+.profile
+.cache/
+.local/
+.config/
+.docker/
+.viminfo
+.lesshst

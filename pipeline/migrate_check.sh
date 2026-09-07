@@ -62,7 +62,18 @@ if [ -f .env ]; then
         The tools container must not run as root -- it would write root-owned
         files into web/albums/ and inbox/. Set them to a real account."
   else
-    ok "PUID/PGID set to a non-root user ($puid:$pgid)"
+    # They must also match the account that actually owns the directories the
+    # tools container writes to, or publishing produces files the service
+    # account cannot replace next time.
+    ouid="$(stat -c '%u' web/albums)"
+    ogid="$(stat -c '%g' web/albums)"
+    if [ "$puid" = "$ouid" ] && [ "$pgid" = "$ogid" ]; then
+      ok "PUID/PGID ($puid:$pgid = $(stat -c '%U:%G' web/albums)) match the owner of web/albums and inbox"
+    else
+      bad "PUID/PGID ($puid:$pgid) do not match the owner of web/albums ($ouid:$ogid = $(stat -c '%U:%G' web/albums)).
+        The tools container would write files the owning account cannot replace.
+        Fix .env, or: chown -R $puid:$pgid web/albums inbox"
+    fi
   fi
 fi
 
