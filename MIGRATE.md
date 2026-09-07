@@ -407,6 +407,50 @@ Things deliberately left undone, so the next person is not surprised:
   cache, not a gate. See "Why the bucket is public" in README.md.
 - **`inbox/` originals are not backed up** — only `album.yaml`. The originals
   are volunteers' own copies; the published derivatives in B2 are what matters.
-- **`docker builder prune` is not automated.** Docker build cache grows on this
-  class of host and is the usual cause of a full disk. Check `docker system df`
-  when `make cache-stats` shows the filesystem tightening.
+- **Docker build cache is pruned monthly, not watched.** The cron entry in step
+  8 reclaims it on the 1st; nothing alerts you between times. Check
+  `docker system df` if `make cache-stats` shows the filesystem tightening — it
+  was 53 GB at project setup and is the usual cause of a full disk on this class
+  of host.
+
+---
+
+## Session log — 2026-09-07
+
+Decisions made during the initial build that the code shows but does not
+explain. Recorded so a future maintainer does not have to rediscover them, or
+"fix" them back.
+
+- **A dedicated `libremedia` account owns everything, not a person.** An earlier
+  round used `divya` (uid 1000), an existing personal account. That tied the
+  gallery's file ownership to one human's account lifecycle; publishing broke
+  the moment `PUID` and the real owner disagreed. `libremedia` has a locked
+  password and exists only for this.
+- **Both cron jobs run from root's crontab, not `libremedia`'s.** Both need the
+  Docker daemon. Running them as `libremedia` would have required no extra
+  privilege — it is already in `docker` — so it would have added no isolation,
+  only a second place to look. Verified that a root-run backup creates no
+  root-owned files in the project.
+- **The sudoers rule is audit and convenience, not containment.** `make` is
+  general-purpose and `docker` group membership is root-equivalent on this
+  host, so anyone who can run a command as `libremedia` can start a container
+  that mounts `/`. Its value is that every publish lands in the sudo log with a
+  name attached. Do not mistake it for a security boundary.
+- **The B2 bucket is public on purpose.** `/media/` is a cache and a cost
+  control, not access control — media is reachable directly at the B2 friendly
+  URL regardless. Correct for a public event gallery; it means consent matters
+  more than permissions, and nothing should enter `inbox/` that is not for
+  publication.
+- **`rclone --immutable` is on the `events/` upload only.** Media filenames are
+  content hashes and genuinely never change, so the flag is a useful safety
+  net there. Album JSON is mutable by design — adding a photo rewrites it — so
+  the same flag on `_site/` would make every backup after the first one fail.
+- **A failed push does not fail a publish.** By the time `publish.sh` pushes,
+  the album is already live and mirrored to B2. A push failure means the repo
+  is temporarily ahead of origin, which is a "push it later" problem; it warns,
+  prints the retry command, and exits 0.
+- **The no-change path still runs the media upload and the B2 mirror.** Both
+  are no-ops when nothing changed, and both repair a previous run that failed
+  part-way after local files were already updated. Only the manifest install,
+  index rebuild, commit and push are skipped. Removing the "redundant" upload
+  and mirror would remove that self-healing.
