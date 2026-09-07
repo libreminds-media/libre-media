@@ -56,12 +56,24 @@ no ffmpeg, no rclone on the host; those all live in the `tools` container.
 ### 1. Clone
 
 ```bash
-git clone <repo-url> /home/libre-media
+git clone git@github.com:libreminds-media/libre-media.git /home/libre-media
 cd /home/libre-media
 ```
 
 The path matters: `docker-compose.yml` uses relative bind mounts, so any path
-works, but keep everything under one directory as CLAUDE.md requires.
+works, but keep everything under one directory as CLAUDE.md requires. The
+default branch is `main`.
+
+Cloning over SSH needs a key GitHub will accept. If you do not have one on the
+new host yet, clone over HTTPS instead — the repository is public — and switch
+the remote to SSH later, after step 2b has created the service account and you
+have added its key as a deploy key:
+
+```bash
+git clone https://github.com/libreminds-media/libre-media.git /home/libre-media
+# later, as libremedia:
+git remote set-url origin git@github.com:libreminds-media/libre-media.git
+```
 
 ### 2. Bring `.env` across
 
@@ -285,6 +297,37 @@ cd /root && env -i SHELL=/bin/sh PATH=/usr/bin:/bin HOME=/root \
 tail -20 /home/libre-media/backup.log     # must end: ==> backup complete
 ```
 
+### 8b. Give the new server push access
+
+Album metadata is committed locally by `publish.sh` but **not** pushed. If this
+server is to stay an accurate second copy of the repo, it needs its own key:
+
+```bash
+sudo -u libremedia ssh-keygen -t ed25519 -N "" \
+     -C "libremedia@$(hostname) deploy key" -f /home/libre-media/.ssh/id_ed25519
+cat /home/libre-media/.ssh/id_ed25519.pub      # add as a write-enabled deploy key
+```
+
+Verify GitHub's host key against their published fingerprints rather than
+accepting it blindly on first connect:
+
+```bash
+curl -s https://api.github.com/meta | python3 -c \
+  'import json,sys; [print(k,v) for k,v in json.load(sys.stdin)["ssh_key_fingerprints"].items()]'
+ssh-keyscan -t rsa,ecdsa,ed25519 github.com > /tmp/gh
+while read -r h t k; do echo "$h $t $k" | ssh-keygen -lf -; done < /tmp/gh
+# compare, then only if they match:
+install -m 600 -o libremedia -g libremedia /tmp/gh /home/libre-media/.ssh/known_hosts
+sudo -u libremedia ssh -o StrictHostKeyChecking=yes -T git@github.com
+```
+
+Then:
+
+```bash
+sudo -u libremedia git remote set-url origin git@github.com:libreminds-media/libre-media.git
+sudo -u libremedia git push -u origin main
+```
+
 ### 9. Decommission the old server
 
 Only after the new one has served real traffic for a day:
@@ -312,7 +355,7 @@ immutable and `rclone copy` never deletes.
 | Check | Command | Expected |
 |---|---|---|
 | Config valid | `make check` | compose OK, `syntax is ok` twice |
-| Migration readiness | `make migrate-check` | 0 failed |
+| Migration readiness | `sudo -u libremedia make migrate-check` | **0 failed, 0 warnings** |
 | Containers up | `docker compose ps` | `web` and `cache` healthy |
 | Caddy accepted our labels | `docker logs --since 5m caddy-proxy` | no config errors |
 | Front page | `curl -sI https://$HOST/` | `200`, `cache-control: public, max-age=300` |
@@ -322,7 +365,10 @@ immutable and `rclone copy` never deletes.
 | Video seeking | `curl -sI -H 'Range: bytes=0-1023' ...` | `206 Partial Content` |
 | Deep link | open `https://$HOST/album.html?a=<slug>#lg=<slug>&slide=2` | opens on slide 3 |
 | Backup round-trip | `make backup && make restore TARGET=.restore-check` | `diff -r` clean |
-| No secrets committed | `git grep -i -E 'key\|secret' -- ':!*.example'` | nothing |
+| No secrets committed | `sudo -u libremedia make migrate-check` | "no .env value appears in any tracked file or anywhere in git history" |
+| Service account owns the tree | `find /home/libre-media -path '*/cache-data' -prune -o ! -user libremedia -print` | no output |
+| Repo is a real second copy | `sudo -u libremedia git status -sb` | `## main...origin/main` with nothing ahead |
+| Scheduled jobs installed | `sudo crontab -l` | the two libre-media lines |
 
 ---
 

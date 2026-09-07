@@ -15,8 +15,13 @@ Pillow, ffmpeg and rclone all run inside the `tools` container.
 
 You need three things: a slug, an `album.yaml`, and your files.
 
+> **Which half of this is yours?** If you are a **volunteer**, you do steps 1-3
+> — copying files into `inbox/` over SFTP — and then tell an admin. Steps 4 and
+> 5 need Docker access and are run by an **admin** as the service account. See
+> "Access model" below.
+
 ```bash
-cd /home/libre-media
+cd /home/libre-media          # admins: publishing must run from here
 
 # 1. Make the drop folder. Slug is <year>-<event-name>, lowercase, hyphenated.
 mkdir -p inbox/2025-kcd-bengaluru/{photos,videos}
@@ -29,19 +34,23 @@ description: Talks, hallway track and the community dinner.
 credit: Photos by the LibreMinds media team
 license: CC BY-SA 4.0
 youtube:
-  - dQw4w9WgXcQ
+  - kJQP7kiw5Fk          # the id from https://youtu.be/<id>, not the full URL
 YAML
 
 # 3. Drop the originals in. Any common format; they get converted for you.
 cp ~/event-photos/*.jpg inbox/2025-kcd-bengaluru/photos/
 cp ~/event-video/*.mov  inbox/2025-kcd-bengaluru/videos/
 
-# 4. See what would happen. Changes nothing.
-make publish-dry SLUG=2025-kcd-bengaluru
+# 4. (admin) See what would happen. Changes nothing.
+sudo -u libremedia make publish-dry SLUG=2025-kcd-bengaluru
 
-# 5. Do it.
-make publish SLUG=2025-kcd-bengaluru
+# 5. (admin) Do it.
+sudo -u libremedia make publish SLUG=2025-kcd-bengaluru
 ```
+
+Everything must run as `libremedia`, the service account that owns these files.
+Publishing as yourself or as root leaves files the service account cannot
+replace on the next publish, and `make migrate-check` will start failing.
 
 The album appears at `https://photos.libreminds.org/album.html?a=2025-kcd-bengaluru`
 and on the front page.
@@ -75,7 +84,11 @@ and on the front page.
 4. **Installs** the manifest as `web/albums/<slug>.json` and rebuilds
    `web/albums/index.json`.
 5. **Mirrors** `web/albums/` to `b2:<bucket>/_site/albums/`.
-6. **Commits** `web/albums/` as `album: <slug>`.
+6. **Commits** `web/albums/` as `album: <slug>`. It does **not** push — run
+   `sudo -u libremedia git push` afterwards, or `origin/main` drifts behind and
+   a future server rebuilt by `git clone` would be missing recent albums.
+   (`make backup` still mirrors the same JSON to B2 nightly, so nothing is
+   actually lost — but the repo stops being an accurate second copy.)
 
 It refuses to run if the working tree has uncommitted changes outside
 `web/albums/` — that commit would otherwise sweep up unrelated work. Override
@@ -192,29 +205,58 @@ make shell          a shell in the tools container
 
 Run `make` on its own for the same list.
 
+Anything that writes files — `publish`, `index`, `restore`, `up` — should be run
+as the service account: `sudo -u libremedia make <target>`, from
+`/home/libre-media`. Read-only targets (`check`, `migrate-check`, `cache-stats`,
+`logs`) are safe to run as yourself.
+
 ---
 
 ## Setup on a fresh checkout
 
+Order matters: the service account has to exist before `.env` can name it.
+For a full server move, follow MIGRATE.md instead — it covers this plus DNS.
+
 ```bash
+# 1. As root: create the account that will own everything.
+#    Pick a uid/gid free in BOTH passwd and group on this host.
+groupadd --gid 1003 libremedia
+useradd --system --uid 1003 --gid libremedia \
+        --home-dir /home/libre-media --no-create-home --shell /bin/bash libremedia
+passwd -l libremedia
+usermod -aG docker libremedia          # needed to run the containers
+
+# 2. As root: hand the tree over (cache-data/ is excluded on purpose --
+#    the cache container chowns it to its own nginx uid at every start).
+find /home/libre-media -path /home/libre-media/cache-data -prune -o -print0 \
+  | xargs -0 chown -h libremedia:libremedia
+find /home/libre-media/web/albums /home/libre-media/inbox -type d -exec chmod 2775 {} +
+
+# 3. Configure.
 cp .env.example .env
-chmod 600 .env
-$EDITOR .env          # fill in B2_KEY_ID, B2_APP_KEY, B2_DOWNLOAD_HOST
-make build
-make check
-make up
-make migrate-check
+chmod 600 .env && chown libremedia:libremedia .env
+$EDITOR .env    # B2_KEY_ID, B2_APP_KEY, B2_DOWNLOAD_HOST, and PUID/PGID = 1003
+
+# 4. Everything from here runs as the service account.
+sudo -u libremedia make build
+sudo -u libremedia make check          # starts nothing
+sudo -u libremedia make up
+sudo -u libremedia make migrate-check  # must report 0 failed
 ```
 
-Every variable is documented in `.env.example`. `make migrate-check` will tell
-you if you missed one.
+Every variable is documented in `.env.example`, and `make migrate-check` names
+any you missed. `B2_DOWNLOAD_HOST` is the one people get wrong — it must be the
+`f00X.backblazeb2.com` friendly host, **not** the `s3.<region>` endpoint; the
+symptom is `400 InvalidRequest` on every image while the pages load fine.
 
 ---
 
 ## Access model
 
-Three roles, deliberately separated so a volunteer never needs docker access
-and no one needs root.
+Three roles, deliberately separated so a volunteer never needs Docker access
+and day-to-day publishing never needs root. Root is still required twice:
+once at setup, to create accounts and install the crontab entries, and
+thereafter only to add or remove people.
 
 | Role | Account | Can do | Cannot do |
 |---|---|---|---|
