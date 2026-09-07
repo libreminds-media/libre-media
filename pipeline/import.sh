@@ -66,7 +66,14 @@ if [ "${IN_TOOLS:-0}" = "1" ]; then
 
   PHOTOS="inbox/${SLUG}/photos"
   VIDEOS="inbox/${SLUG}/videos"
-  mkdir -p "$PHOTOS" "$VIDEOS"
+  # A dry run must leave the filesystem exactly as it found it, including not
+  # leaving empty directories behind. rclone's own --dry-run does not need the
+  # destination to exist in order to list what it would copy.
+  if [ "$DRY" = "1" ]; then
+    info "would create ${PHOTOS} and ${VIDEOS}"
+  else
+    mkdir -p "$PHOTOS" "$VIDEOS"
+  fi
 
   # --size-only: treat a file already present at the same size as done. Photos
   # come off a phone once and never change; re-downloading gigabytes because a
@@ -112,10 +119,12 @@ YAMLEOF
     info "created ${YAML} from the template"
   fi
 
-  nphoto=$(find "$PHOTOS" -type f 2>/dev/null | wc -l)
-  nvideo=$(find "$VIDEOS" -type f 2>/dev/null | wc -l)
-  echo
-  info "inbox/${SLUG}: ${nphoto} image(s), ${nvideo} video(s)"
+  if [ "$DRY" != "1" ]; then
+    nphoto=$(find "$PHOTOS" -type f 2>/dev/null | wc -l)
+    nvideo=$(find "$VIDEOS" -type f 2>/dev/null | wc -l)
+    echo
+    info "inbox/${SLUG}: ${nphoto} image(s), ${nvideo} video(s)"
+  fi
   exit 0
 fi
 
