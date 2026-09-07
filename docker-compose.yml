@@ -97,6 +97,12 @@ services:
     volumes:
       - ./:/work
     environment:
+      # Where rclone reads its config file. Only the "onedrive" remote lives
+      # there: rclone refreshes its OAuth token and writes the new one back, so
+      # it needs a persistent writable file. ./ is mounted read-write below, so
+      # a refreshed token survives the container exiting.
+      # B2 is NOT in that file -- it stays in the environment variables below.
+      RCLONE_CONFIG: /work/.config/rclone/rclone.conf
       # rclone remote "b2" configured entirely from the environment, so no
       # credential ever reaches a config file on disk. (CLAUDE.md §5)
       RCLONE_CONFIG_B2_TYPE: b2

@@ -19,6 +19,7 @@ until you cut DNS over, and you verify the new one *before* you do.
 | Volunteer `album.yaml` files | `b2:<bucket>/_site/inbox/` | `make restore` |
 | Media bytes (photos, video) | `b2:<bucket>/events/` | nothing to do — B2 is the source of truth |
 | Secrets and host config | `.env` | copy by hand, out of band |
+| OneDrive OAuth token | `.config/rclone/rclone.conf` | copy by hand, out of band — **not in git** |
 | Cache | `cache-data/` | nothing to do — it refills itself |
 
 If the old server is already gone, `make restore` rebuilds `web/albums/` and the
@@ -88,6 +89,29 @@ cat /home/libre-media/.env          # copy the output somewhere safe
 $EDITOR /home/libre-media/.env      # paste, then:
 chmod 600 .env
 ```
+
+Do the same for the OneDrive token, which is a separate file for the reason
+given in README "Why this file exists at all" — rclone refreshes OAuth tokens
+and writes them back, so it needs a writable file rather than an env var:
+
+```bash
+# On the OLD server:
+cat /home/libre-media/.config/rclone/rclone.conf
+
+# On the NEW server (after step 2b has created the account):
+install -d -m 700 -o libremedia -g libremedia /home/libre-media/.config/rclone
+$EDITOR /home/libre-media/.config/rclone/rclone.conf     # paste
+chmod 600 /home/libre-media/.config/rclone/rclone.conf
+chown libremedia:libremedia /home/libre-media/.config/rclone/rclone.conf
+```
+
+Only the `[onedrive]` remote belongs in that file. B2 stays in `.env` as
+environment variables. If you would rather re-authorise than copy a live token,
+run the one-time setup in README "Importing from OneDrive" instead — both
+servers can hold valid tokens for the same account at once.
+
+Skipping this is safe: everything except `make import` works without it, and
+`make migrate-check` reports it as a WARN rather than a failure.
 
 Then update the two host-specific values if they changed:
 
@@ -369,6 +393,7 @@ immutable and `rclone copy` never deletes.
 | Service account owns the tree | `find /home/libre-media -path '*/cache-data' -prune -o ! -user libremedia -print` | no output |
 | Repo is a real second copy | `sudo -u libremedia git status -sb` | `## main...origin/main` with nothing ahead |
 | Scheduled jobs installed | `sudo crontab -l` | the two libre-media lines |
+| OneDrive token (if used) | `sudo -u libremedia make onedrive-ls SRC=""` | lists folders, no auth error |
 
 ---
 
@@ -405,6 +430,12 @@ Things deliberately left undone, so the next person is not surprised:
 
 - **No image-level access control.** The B2 bucket is public; `/media/` is a
   cache, not a gate. See "Why the bucket is public" in README.md.
+- **The OneDrive token is not backed up anywhere.** It is deliberately outside
+  git and outside the B2 backup, because backing up a live OAuth refresh token
+  would put a credential somewhere it does not need to be. If it is lost, redo
+  the one-time `rclone authorize` — it costs five minutes and nothing is
+  destroyed. The same applies if the token is ever revoked or expires.
+
 - **`inbox/` originals are not backed up** — only `album.yaml`. The originals
   are volunteers' own copies; the published derivatives in B2 are what matters.
 - **Docker build cache is pruned monthly, not watched.** The cron entry in step

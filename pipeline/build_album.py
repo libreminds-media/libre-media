@@ -36,6 +36,18 @@ from pathlib import Path
 from PIL import Image, ImageOps
 import yaml
 
+# iPhone photos arrive as .heic, which Pillow cannot open unaided. Registering
+# pillow-heif's opener makes HEIC just another format to Image.open(). Kept
+# optional so the pipeline still runs (minus HEIC) if the wheel is unavailable
+# for some future platform.
+try:
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+    HEIF_OK = True
+except Exception:                       # noqa: BLE001 - any failure means "no HEIC"
+    HEIF_OK = False
+
 # --- tunables ---------------------------------------------------------------
 
 DISPLAY_MAX = 1920          # long edge of lightbox images
@@ -244,8 +256,15 @@ def build_youtube(vid: str) -> dict:
 # --- incremental cache ------------------------------------------------------
 
 def source_key(p: Path) -> str:
+    """Cache key for one source file.
+
+    Uses the full path, not just the name: photos/ can contain subdirectories
+    (a OneDrive import preserves the source structure), and phones happily
+    produce two IMG_0001.JPG in different folders. Keying on the bare name
+    would let one silently reuse the other's build output.
+    """
     st = p.stat()
-    return f"{p.name}:{st.st_size}:{st.st_mtime_ns}"
+    return f"{p!s}:{st.st_size}:{st.st_mtime_ns}"
 
 
 def load_cache(path: Path) -> dict:
@@ -302,11 +321,21 @@ def main() -> int:
     cache = {} if args.force else load_cache(cache_path)
     new_cache: dict[str, dict] = {}
 
-    photos = sorted(p for p in (album_dir / "photos").glob("*")
-                    if p.is_file() and p.suffix.lower() in PHOTO_EXT)
-    videos = sorted(p for p in (album_dir / "videos").glob("*")
-                    if p.is_file() and p.suffix.lower() in VIDEO_EXT)
+    # rglob, not glob: a OneDrive import preserves the source folder structure,
+    # so photos/ routinely contains subdirectories. Globbing only the top level
+    # would silently drop those files -- the worst kind of bug here, because the
+    # album publishes successfully with photos missing.
+    photos = sorted((p for p in (album_dir / "photos").rglob("*")
+                     if p.is_file() and p.suffix.lower() in PHOTO_EXT),
+                    key=lambda p: str(p).lower())
+    videos = sorted((p for p in (album_dir / "videos").rglob("*")
+                     if p.is_file() and p.suffix.lower() in VIDEO_EXT),
+                    key=lambda p: str(p).lower())
     youtube = meta.get("youtube") or []
+
+    if not HEIF_OK and any(p.suffix.lower() == ".heic" for p in photos):
+        die("this album contains .heic files but pillow-heif is not available.\n"
+            "  Rebuild the tools image: make build")
 
     print(f"building {slug}: {len(photos)} photo(s), {len(videos)} video(s), "
           f"{len(youtube)} youtube link(s)")

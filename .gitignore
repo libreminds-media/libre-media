@@ -35,7 +35,12 @@ __pycache__/
 .profile
 .cache/
 .local/
+# .config/ holds .config/rclone/rclone.conf -- the OneDrive OAuth refresh token,
+# which is a credential every bit as sensitive as the B2 key. It is covered by
+# the .config/ rule above; the explicit line below is here so that deleting the
+# broad rule cannot silently expose it.
 .config/
+.config/rclone/rclone.conf
 .docker/
 .viminfo
 .lesshst

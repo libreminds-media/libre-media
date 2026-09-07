@@ -14,6 +14,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose
 NGINX_IMAGE := nginx:alpine
 SLUG ?=
+SRC ?=
 DRY ?= 0
 TARGET ?= .
 LG ?= 2.9.0
@@ -29,7 +30,7 @@ endif
 
 .PHONY: help up down restart logs check build publish publish-dry index \
         backup restore cache-stats cache-clear migrate-check shell \
-        vendor-lightgallery tree env-check
+        vendor-lightgallery tree env-check import import-dry onedrive-ls
 
 help:
 	@echo "libre-media — make targets"
@@ -46,6 +47,11 @@ help:
 	@echo "    make publish SLUG=2025-my-event        build, upload, install, commit"
 	@echo "    make publish-dry SLUG=2025-my-event    same, but change nothing"
 	@echo "    make index            rebuild web/albums/index.json from the album JSON"
+	@echo
+	@echo "  Importing from OneDrive"
+	@echo "    make import SLUG=2025-my-event SRC=\"Photos/My Event\"   download originals"
+	@echo "    make import-dry SLUG=... SRC=\"...\"                     show what would download"
+	@echo "    make onedrive-ls [SRC=\"Photos\"]                        list OneDrive folders"
 	@echo
 	@echo "  Operations"
 	@echo "    make backup           album metadata -> B2 (_site/)"
@@ -123,6 +129,23 @@ publish-dry: env-check
 
 index: env-check
 	$(COMPOSE) --profile tools run --rm -T tools pipeline/update_index.py
+
+# --- OneDrive import -------------------------------------------------------
+
+import: env-check
+	@test -n "$(SLUG)" || { echo "make: SLUG is required, e.g. make import SLUG=2025-my-event SRC=\"Photos/My Event\""; exit 1; }
+	@test -n "$(SRC)"  || { echo "make: SRC is required: the folder path inside the OneDrive account"; exit 1; }
+	SLUG="$(SLUG)" SRC="$(SRC)" DRY="$(DRY)" ./pipeline/import.sh
+
+import-dry: env-check
+	@test -n "$(SLUG)" || { echo "make: SLUG is required"; exit 1; }
+	@test -n "$(SRC)"  || { echo "make: SRC is required"; exit 1; }
+	SLUG="$(SLUG)" SRC="$(SRC)" DRY=1 ./pipeline/import.sh
+
+# Browse the OneDrive account so you can find the right SRC path.
+onedrive-ls: env-check
+	$(COMPOSE) --profile tools run --rm -T tools -lc \
+	  'rclone lsd "onedrive:$(SRC)" 2>&1 | sed "s/^/  /"'
 
 # --- operations ------------------------------------------------------------
 

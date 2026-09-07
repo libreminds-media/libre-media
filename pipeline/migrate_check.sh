@@ -83,7 +83,7 @@ for f in docker-compose.yml Makefile README.md MIGRATE.md .env.example .gitignor
          cache/nginx.conf.template cache/05-cache-perms.sh \
          webconf/default.conf.template tools/Dockerfile \
          pipeline/build_album.py pipeline/update_index.py \
-         pipeline/manifest_changed.py \
+         pipeline/manifest_changed.py pipeline/import.sh \
          pipeline/publish.sh pipeline/backup.sh pipeline/restore.sh \
          web/index.html web/album.html web/assets/style.css \
          web/assets/config.js web/assets/media.js LICENSE \
@@ -181,6 +181,47 @@ if [ -f .env ]; then
   else
     bad "SECRET LEAKED:${leaked} -- do not publish this repository"
   fi
+fi
+
+# The OneDrive OAuth refresh token is a credential like any other. It lives in
+# a file (rclone has to write refreshed tokens back), so it needs the same
+# treatment as .env: 0600, owned by the service account, never tracked.
+RCONF=".config/rclone/rclone.conf"
+if [ -f "$RCONF" ]; then
+  rperm="$(stat -c '%a' "$RCONF")"
+  rown="$(stat -c '%U:%G' "$RCONF")"
+  oexp="$(stat -c '%U:%G' web/albums)"
+  if [ "$rperm" != "600" ]; then
+    bad "$RCONF is mode $rperm, must be 600 -- it holds the OneDrive OAuth
+        refresh token. Fix with: chmod 600 $RCONF"
+  elif [ "$rown" != "$oexp" ]; then
+    bad "$RCONF is owned by $rown, expected $oexp (the service account).
+        Fix with: chown $oexp $RCONF"
+  else
+    ok "$RCONF is 0600 and owned by $rown"
+  fi
+  if git check-ignore -q "$RCONF"; then
+    ok "$RCONF is git-ignored"
+  else
+    bad "$RCONF is NOT git-ignored -- it would be published with the repo"
+  fi
+  if git ls-files --error-unmatch "$RCONF" >/dev/null 2>&1; then
+    bad "$RCONF is TRACKED IN GIT -- revoke the OneDrive token and purge it"
+  fi
+  if grep -q '^\[onedrive\]' "$RCONF" 2>/dev/null; then
+    # An UNCOMMENTED token assignment. Matching the bare word would also match
+    # the commented placeholder in the skeleton config, which is exactly the
+    # false pass this check exists to avoid.
+    if grep -qE '^[[:space:]]*token[[:space:]]*=' "$RCONF"; then
+      ok "onedrive remote is configured with a token"
+    else
+      warn "$RCONF has an [onedrive] stanza but no token -- run the one-time
+        setup in README \"Importing from OneDrive\""
+    fi
+  fi
+else
+  warn "$RCONF not present -- OneDrive import is unavailable (everything else
+        works). See README \"Importing from OneDrive\"."
 fi
 
 if git check-ignore -q .env; then ok ".env is git-ignored"; else bad ".env is NOT git-ignored"; fi

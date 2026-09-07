@@ -46,9 +46,13 @@ RUN set -eux; \
     rm -rf /tmp/rclone-* /tmp/SHA256SUMS; \
     rclone version
 
+# pillow-heif: iPhone originals arrive as .heic, which Pillow cannot open on
+# its own. Registering its opener (see pipeline/build_album.py) makes HEIC just
+# another input format.
 RUN pip install --no-cache-dir --root-user-action=ignore \
       "pillow>=10" \
-      "pyyaml>=6"
+      "pyyaml>=6" \
+      "pillow-heif>=0.16"
 
 # The container runs as the invoking user (see `user:` in docker-compose.yml),
 # who has no home directory in this image. HOME=/tmp is set in compose.

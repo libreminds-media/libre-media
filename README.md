@@ -340,6 +340,129 @@ directory, so admins must `cd /home/libre-media` first.
 
 ---
 
+## Importing from OneDrive (admin)
+
+Event photos usually arrive in a shared OneDrive folder. `make import` pulls
+them straight into `inbox/`, so nobody has to download a zip and re-upload it.
+
+### The flow
+
+```bash
+cd /home/libre-media
+
+# 1. Find the folder. Lists directories in the account.
+sudo -u libremedia make onedrive-ls SRC="Photos"
+
+# 2. See what would be downloaded. Changes nothing.
+sudo -u libremedia make import-dry SLUG=2025-kcd-bengaluru SRC="Photos/KCD Bengaluru 2025"
+
+# 3. Download for real. Images -> inbox/<slug>/photos/, video -> videos/.
+sudo -u libremedia make import SLUG=2025-kcd-bengaluru SRC="Photos/KCD Bengaluru 2025"
+
+# 4. Edit the album.yaml it created. The date is a placeholder and publishing
+#    WILL FAIL until you replace it with the real event date.
+$EDITOR inbox/2025-kcd-bengaluru/album.yaml
+
+# 5. Publish as normal.
+sudo -u libremedia make publish SLUG=2025-kcd-bengaluru
+```
+
+Import takes `.jpg .jpeg .png .heic .mp4 .mov`, case-insensitively, so `.JPG`
+and `.HEIC` straight off a phone are picked up. iPhone HEIC originals are
+converted by the build step like any other format. Anything else in the folder
+— `.txt`, `.zip`, RAW files, `Thumbs.db` — is ignored.
+
+It uses `rclone copy` **only**. There is no `sync`, `move` or `purge` anywhere
+in this pipeline, so a wrong `SRC` costs you a wasted download and nothing
+else. Files already present at the same size are skipped, so re-running an
+interrupted import resumes rather than starting over.
+
+If `album.yaml` already exists it is left alone; import never overwrites your
+metadata.
+
+### Share links do not work
+
+**A OneDrive share link is not a path and rclone cannot use one.** The
+`1drv.ms/...` and `...sharepoint.com/:f:/...` URLs on libreminds.org are
+browser links; they carry no credential rclone can present and are not part of
+the account's own filesystem. `SRC` must be the folder's path **inside the
+account whose token you configured**, exactly as `make onedrive-ls` shows it:
+
+```
+SRC="Photos/KCD Bengaluru 2025"        correct
+SRC="https://1drv.ms/f/s!AbCdEf"       rejected, with this explanation
+```
+
+If the photos live in someone else's OneDrive, they must either add the folder
+to the gallery account's own drive ("Add shortcut to My files" in the OneDrive
+web UI, which then appears as a normal path), or share the files another way.
+
+### One-time token setup
+
+rclone needs an OAuth token. Authorising requires a browser, so it is done on
+a laptop and the result pasted in here — the server never opens a browser and
+never sees your password.
+
+**On your laptop**, with rclone installed:
+
+```bash
+rclone authorize "onedrive"
+```
+
+A browser window opens, you sign in to the gallery's Microsoft account and
+approve access. rclone then prints a token blob to the terminal:
+
+```
+Paste the following into your remote machine --->
+{"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}
+<---End paste
+```
+
+**On the server**, put it in `/home/libre-media/.config/rclone/rclone.conf`:
+
+```ini
+[onedrive]
+type = onedrive
+token = {"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}
+drive_type = business
+drive_id = b!xxxxxxxxxxxxxxxxxxxx
+```
+
+`token` must be the whole blob on **one line**. Then:
+
+```bash
+chmod 600 /home/libre-media/.config/rclone/rclone.conf
+chown libremedia:libremedia /home/libre-media/.config/rclone/rclone.conf
+sudo -u libremedia make onedrive-ls          # should list folders
+sudo -u libremedia make migrate-check        # checks the file's permissions
+```
+
+If you do not know `drive_id` and `drive_type`, add just `type` and `token`
+first, then ask the API:
+
+```bash
+sudo -u libremedia docker compose --profile tools run --rm -T tools \
+  -lc 'rclone backend drives onedrive:'
+```
+
+Copy the id and type of the drive you want into the config. A personal account
+uses `drive_type = personal`; a Microsoft 365 / work account uses `business`.
+
+### Why this file exists at all
+
+B2 credentials are passed as environment variables so they never touch disk
+(CLAUDE.md §5). OneDrive cannot work that way: OAuth tokens expire, and rclone
+refreshes them and **writes the new one back**. That needs a persistent,
+writable file. So `.config/rclone/rclone.conf` holds the OneDrive remote and
+nothing else — B2 is still environment-only.
+
+Treat that file exactly like `.env`: **0600, owned by `libremedia`,
+git-ignored**. `make migrate-check` fails if the permissions or ownership are
+wrong, and fails loudly if it ever appears in git. It is not in the repository
+and must be copied by hand to a new server — see MIGRATE.md.
+
+---
+
 ## Cache and disk
 
 `cache-data/` is a disposable nginx `proxy_cache`. Deleting it costs nothing but
