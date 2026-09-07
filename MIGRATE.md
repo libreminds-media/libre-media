@@ -39,11 +39,15 @@ which were never on the server's critical path.
    ```
 3. Ports 80 and 443 reachable from the internet (Caddy needs them for ACME).
 4. Enough disk for the media cache — see `CACHE_MAX_SIZE` and `CACHE_MIN_FREE`.
-5. A group for the volunteer uid/gid, matching `PUID`/`PGID` in `.env`. This is
-   the **only** thing this project needs outside `/home/libre-media`, and it is
-   one line in `/etc/group`. See step 2b.
+5. A dedicated service account and group (`libremedia`), added to `docker`.
+   See step 2b.
+6. Two entries in **root's** crontab (nightly backup, monthly build-cache
+   prune). See step 8.
 
-Nothing else. No Python, no ffmpeg, no rclone on the host.
+Items 5 and 6 are the complete list of what this project touches outside
+`/home/libre-media`: two lines in `/etc/passwd` and `/etc/group`, one
+`docker` group membership, and two crontab lines. Nothing else — no Python,
+no ffmpeg, no rclone on the host; those all live in the `tools` container.
 
 ---
 
@@ -80,25 +84,68 @@ Then update the two host-specific values if they changed:
 
 `SITE_HOST`, `B2_*` and the rest carry over unchanged.
 
-### 2b. Recreate the volunteer group and ownership
+### 2b. Recreate the service account and ownership
 
-`PUID`/`PGID` in `.env` refer to a uid and gid that must exist on the **new**
-server, and the directories they own must be writable by them. `make
-migrate-check` fails if `PUID`/`PGID` are unset or 0.
+The project runs as a dedicated service account, **not** as a person. `PUID`
+and `PGID` in `.env` are its uid and gid, and `make migrate-check` fails if they
+are unset, resolve to 0, or do not match the uid/gid that actually own
+`web/albums/` and `inbox/`.
+
+On the old server this account was `libremedia`, uid **1003**, gid **1003**.
+The uid does not have to match on the new server — only `.env` and the file
+ownership have to agree with each other.
 
 ```bash
-groupadd -f mediateam
-getent group mediateam        # if the gid differs from the old server,
-                              # update PGID in .env to match
+# Pick a uid/gid free in BOTH passwd and group on the new host:
+for n in $(seq 1001 1010); do
+  getent passwd $n >/dev/null || getent group $n >/dev/null || { echo "free: $n"; break; }
+done
+NEWID=<the number that printed>
 
-chown -R $(grep -E '^PUID=' .env | cut -d= -f2):$(grep -E '^PGID=' .env | cut -d= -f2) \
-      web/albums inbox
+groupadd --gid "$NEWID" libremedia
+useradd --system --uid "$NEWID" --gid libremedia \
+        --home-dir /home/libre-media --no-create-home \
+        --shell /bin/bash --comment "libre-media gallery service account" libremedia
+passwd -l libremedia            # no password login
+usermod -aG docker libremedia   # needed to run the containers
+
+# Point .env at the ids you just used:
+sed -i "s/^PUID=.*/PUID=$NEWID/;s/^PGID=.*/PGID=$NEWID/" .env
+
+# Hand the tree over. cache-data/ is EXCLUDED -- the cache container chowns it
+# to its own unprivileged nginx uid (101) at every start.
+find /home/libre-media -path /home/libre-media/cache-data -prune -o -print0 \
+  | xargs -0 chown -h libremedia:libremedia
+chmod 600 .env
+
+# setgid + group-write on the volunteer-facing directories, so files created
+# inside inherit group `libremedia` rather than the creator's primary group.
 find web/albums inbox -type d -exec chmod 2775 {} +
+find web/albums inbox -type f -exec chmod 664 {} +
 
-usermod -aG mediateam <each volunteer>
+# Volunteers get personal accounts in the group; they never need docker.
+usermod -aG libremedia <each volunteer>
 ```
 
-Do **not** chown `cache-data/` — the cache container manages it.
+The service account's home **is** `/home/libre-media`, so anything it writes to
+its home lands inside the repository. `.gitignore` already excludes `.ssh/`,
+`.bash_history`, `.cache/` and friends — **keep those lines**, `.ssh/` holds
+the GitHub deploy key.
+
+Verify before moving on:
+
+```bash
+sudo -u libremedia git status            # no safe.directory warning
+sudo -u libremedia make migrate-check    # PUID/PGID check must PASS
+```
+
+If the new host needs its own deploy key, generate it **as the service
+account** so it is never root-owned:
+
+```bash
+sudo -u libremedia ssh-keygen -t ed25519 -N "" \
+     -C "libremedia@$(hostname) deploy key" -f /home/libre-media/.ssh/id_ed25519
+```
 
 ### 3. Build and restore
 
@@ -200,13 +247,42 @@ curl -sI "https://$HOST/media/$IMG" | grep -i x-cache
 make migrate-check                            # the DNS warning should now be PASS
 ```
 
-### 8. Nightly backup
+### 8. Scheduled jobs
 
-Add the one permitted crontab line (the only thing this project puts outside
-`/home/libre-media`):
+Add both entries to **root's** crontab (`sudo crontab -e`). Together with the
+service account, these are the only things this project puts outside
+`/home/libre-media`.
 
 ```cron
-17 3 * * * /usr/bin/make backup >> /home/libre-media/backup.log 2>&1
+# --- libre-media (photos.libreminds.org) -----------------------------------
+# Nightly: album metadata -> Backblaze B2. `rclone copy`, never `sync`, so it
+# can add and update but can never delete.
+# The `cd` is required: cron starts in the user's home directory.
+17 3 * * * cd /home/libre-media && /usr/bin/make backup >> /home/libre-media/backup.log 2>&1
+#
+# Monthly (1st, 04:23): reclaim Docker build cache -- the usual cause of a full
+# disk on a host like this. Build cache only; no image, container or volume.
+23 4 1 * * cd /home/libre-media && /usr/bin/docker builder prune -f >> /home/libre-media/prune.log 2>&1
+```
+
+They run as root because both need the Docker daemon, and `docker` group
+membership is root-equivalent anyway, so running them as `libremedia` would add
+no isolation. The backup creates no root-owned files in the project.
+
+Pre-create the logs owned by the service account, so a root-run job appends
+rather than taking them over:
+
+```bash
+install -m 644 -o libremedia -g libremedia /dev/null /home/libre-media/backup.log
+install -m 644 -o libremedia -g libremedia /dev/null /home/libre-media/prune.log
+```
+
+Then prove it works before you trust it:
+
+```bash
+cd /root && env -i SHELL=/bin/sh PATH=/usr/bin:/bin HOME=/root \
+  /bin/sh -c 'cd /home/libre-media && /usr/bin/make backup >> /home/libre-media/backup.log 2>&1'
+tail -20 /home/libre-media/backup.log     # must end: ==> backup complete
 ```
 
 ### 9. Decommission the old server
