@@ -293,21 +293,10 @@ the important half: everything created inside inherits group `libremedia`
 rather than the creator's primary group, so the next volunteer can still write
 to it.
 
-To restrict a volunteer to SFTP with no shell, add to `/etc/ssh/sshd_config`:
-
-```
-Match Group libremedia
-    ChrootDirectory /home/libre-media/inbox
-    ForceCommand internal-sftp
-    AllowTcpForwarding no
-    X11Forwarding no
-```
-
-> `ChrootDirectory` requires the chroot target to be owned by **root** and not
-> group-writable, which conflicts with the `2775 libremedia:libremedia` that
-> volunteers need. Either drop `ChrootDirectory` and rely on group permissions,
-> or restructure with a root-owned parent. Decide before enabling this — it is
-> not currently configured.
+Volunteers get a normal shell account by default. Locking them down to
+SFTP-only is possible but is **not** configured here, and is not a loose end —
+see MIGRATE.md "Known gaps" for why it conflicts with the group-writable
+`inbox/` this setup relies on.
 
 ### Publishing (admin)
 
@@ -318,9 +307,9 @@ sudo -u libremedia make publish SLUG=2025-kcd-bengaluru
 sudo -u libremedia make publish-dry SLUG=2025-kcd-bengaluru
 ```
 
-To let a named admin do exactly that and nothing more, install this with
-`visudo -f /etc/sudoers.d/libre-media` (mode `0440`). **This is documentation;
-it is not installed on this server.**
+A sudoers rule lets a named admin do this without knowing the service
+account's business. **Installed on this server for `divya` only**, at
+`/etc/sudoers.d/libre-media`:
 
 ```sudoers
 # /etc/sudoers.d/libre-media

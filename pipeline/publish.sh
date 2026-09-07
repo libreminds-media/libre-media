@@ -148,5 +148,28 @@ else
   info "committed: $(git log -1 --oneline)"
 fi
 
+# --- push -------------------------------------------------------------------
+# A failed push must never fail the publish. By this point the album is already
+# live on the site and its metadata is mirrored to B2, so nothing is lost -- the
+# repository is just temporarily ahead of origin, which is a "push it later"
+# problem, not a broken publish. Hence the warning and exit 0.
+if git remote get-url origin >/dev/null 2>&1; then
+  info "pushing to origin/main"
+  if git push origin main; then
+    info "pushed: $(git rev-parse --short main) -> origin/main"
+  else
+    echo >&2
+    warn "PUSH FAILED. The album is live and its metadata is mirrored to B2,"
+    warn "so nothing is lost -- but this server's repository is now ahead of"
+    warn "origin, and a new server rebuilt by 'git clone' would miss this album."
+    warn "Retry when you can:"
+    warn "    cd $(pwd) && sudo -u libremedia git push origin main"
+  fi
+else
+  warn "no git remote configured; skipping push."
+  warn "The album is live and mirrored to B2, but this repository is not a"
+  warn "second copy until you add a remote. See MIGRATE.md step 8b."
+fi
+
 echo
 info "published: https://$(grep -E '^SITE_HOST=' .env | cut -d= -f2-)/album.html?a=${SLUG}"

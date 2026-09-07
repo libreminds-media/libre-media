@@ -383,6 +383,26 @@ Things deliberately left undone, so the next person is not surprised:
   templating, so the key would have to be edited into `web/assets/config.js` by
   hand — or `web/` would need a render step at container start like the nginx
   configs have.
+- **Volunteers are not confined to SFTP.** They get ordinary shell accounts in
+  the `libremedia` group. The obvious lockdown does not work as written:
+
+  ```
+  Match Group libremedia
+      ChrootDirectory /home/libre-media/inbox
+      ForceCommand internal-sftp
+  ```
+
+  `ChrootDirectory` requires the chroot target to be owned by **root** and not
+  group-writable, but `inbox/` must be `2775 libremedia:libremedia` for
+  volunteers to write to it and for setgid to keep new files in the right
+  group. The two requirements are mutually exclusive on the same directory.
+
+  Doing it properly means a root-owned parent with the writable directory
+  nested inside it (e.g. chroot to `/home/sftp/<user>` with a bind mount of
+  `inbox/`), which is a real design change, not a config tweak. Deliberately
+  deferred -- the current model assumes volunteers are trusted members of the
+  community, not untrusted uploaders.
+
 - **No image-level access control.** The B2 bucket is public; `/media/` is a
   cache, not a gate. See "Why the bucket is public" in README.md.
 - **`inbox/` originals are not backed up** — only `album.yaml`. The originals
