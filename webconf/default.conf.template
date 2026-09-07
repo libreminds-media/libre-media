@@ -1,0 +1,40 @@
+# libre-media — static site (index.html, album.html, albums/*.json, assets/).
+#
+# Rendered at container start by the stock nginx:alpine envsubst entrypoint.
+# NGINX_ENVSUBST_FILTER limits substitution to WEB_* and SITE_*.
+#
+# This server never touches media bytes. Anything under /media/ is routed by
+# Caddy to the `cache` service before it reaches here.
+
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+    charset utf-8;
+
+    access_log /var/log/nginx/access.log;
+
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain always;
+        return 200 "ok\n";
+    }
+
+    # Vendored lightGallery is version-pinned and never edited in place, so it
+    # can be cached hard. Everything else gets the short WEB_MAX_AGE so an
+    # album edit goes live within minutes.
+    location /assets/lightgallery/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options nosniff always;
+        try_files $uri =404;
+    }
+
+    location / {
+        add_header Cache-Control "public, max-age=${WEB_MAX_AGE}" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer-when-downgrade always;
+        try_files $uri $uri/ =404;
+    }
+}

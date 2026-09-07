@@ -1,0 +1,121 @@
+# libre-media — Backblaze B2 caching proxy.
+#
+# Rendered at container start by the STOCK nginx:alpine entrypoint
+# (/docker-entrypoint.d/20-envsubst-on-templates.sh), which runs envsubst over
+# /etc/nginx/templates/*.template into /etc/nginx/conf.d/. No custom
+# entrypoint, no host tooling. NGINX_ENVSUBST_FILTER in docker-compose.yml
+# limits substitution to B2_* CACHE_* MEDIA_* RESOLVER, so nginx's own runtime
+# variables ($uri, $slice_range, ...) pass through untouched.
+#
+# URL contract, shared with web/album.html and web/index.html:
+#
+#     https://<site>/media/events/<slug>/<path>
+#          -> https://<B2_DOWNLOAD_HOST>/file/<B2_BUCKET>/events/<slug>/<path>
+#
+# i.e. everything after /media/ is appended verbatim to the bucket root.
+
+# conf.d/*.conf is included in the http context, so proxy_cache_path is legal here.
+#
+# min_free is a hard floor on FILESYSTEM free space: nginx evicts rather than
+# let the disk fall below it, whatever max_size says. That is what stops this
+# cache from ever starving the other services on this host.
+proxy_cache_path /var/cache/nginx/media
+                 levels=1:2
+                 keys_zone=media:${CACHE_KEYS_ZONE_SIZE}
+                 max_size=${CACHE_MAX_SIZE}
+                 min_free=${CACHE_MIN_FREE}
+                 inactive=${CACHE_INACTIVE}
+                 use_temp_path=off;
+
+server {
+    listen 80;
+    server_name _;
+
+    # Media is content-hashed and up to ~1 GB; never buffer a whole file to disk
+    # beyond one slice, and never let a client stall a worker for long.
+    client_max_body_size 1m;
+    proxy_read_timeout 60s;
+    proxy_connect_timeout 5s;
+
+    access_log /var/log/nginx/access.log;
+
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain always;
+        return 200 "ok\n";
+    }
+
+    location /media/ {
+        # Re-resolve B2 periodically. A literal hostname in proxy_pass would pin
+        # whatever IP nginx saw at boot, which is wrong for a CDN-fronted host.
+        # Using a variable in proxy_pass is what makes `resolver` apply.
+        resolver ${RESOLVER} ipv6=off valid=30s;
+        resolver_timeout 5s;
+        set $b2_host "${B2_DOWNLOAD_HOST}";
+
+        # Once proxy_pass contains a variable, nginx stops substituting the
+        # location prefix, so build the upstream URI explicitly.
+        rewrite ^/media/(.*)$ /file/${B2_BUCKET}/$1 break;
+
+        # --- Range / video seeking ------------------------------------------
+        # Fetch upstream in 1 MB slices and cache each slice separately. This is
+        # what makes seeking inside an MP4 both work AND stay cached; without it
+        # a mid-file seek either bypasses the cache or refetches the whole file.
+        # $slice_range MUST be part of the cache key or slices collide.
+        slice 1m;
+        proxy_set_header Range $slice_range;
+        proxy_cache_key $uri$is_args$args$slice_range;
+
+        # B2 gzip would break slice arithmetic.
+        proxy_set_header Accept-Encoding "";
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        # --- caching ---------------------------------------------------------
+        proxy_cache media;
+        proxy_cache_valid 200 206 ${CACHE_INACTIVE};
+        proxy_cache_valid 301 302 1h;
+        proxy_cache_valid 404 1m;
+        proxy_cache_lock on;
+        proxy_cache_lock_timeout 20s;
+        proxy_cache_revalidate on;
+        proxy_cache_background_update on;
+        proxy_cache_use_stale error timeout updating
+                              http_500 http_502 http_503 http_504;
+        # A client sending Cache-Control: no-cache must not be able to make us
+        # hammer B2 on every request.
+        proxy_cache_bypass 0;
+        proxy_no_cache 0;
+
+        # --- upstream --------------------------------------------------------
+        proxy_pass https://$b2_host;
+        proxy_set_header Host $b2_host;
+        proxy_ssl_server_name on;
+        proxy_ssl_name $b2_host;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+        proxy_ssl_verify on;
+        proxy_ssl_verify_depth 3;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+
+        # --- response headers ------------------------------------------------
+        # Our Cache-Control wins over whatever B2 sends; filenames are immutable.
+        proxy_hide_header Cache-Control;
+        proxy_hide_header Expires;
+        proxy_hide_header Pragma;
+        proxy_hide_header Set-Cookie;
+        # Strip B2 bookkeeping headers; they leak internal ids to visitors.
+        proxy_hide_header x-bz-file-id;
+        proxy_hide_header x-bz-file-name;
+        proxy_hide_header x-bz-content-sha1;
+        proxy_hide_header x-bz-upload-timestamp;
+        proxy_hide_header x-bz-info-src_last_modified_millis;
+
+        add_header Cache-Control "public, max-age=${MEDIA_MAX_AGE}, immutable" always;
+        add_header X-Cache $upstream_cache_status always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    location / {
+        return 404;
+    }
+}

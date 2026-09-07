@@ -1,0 +1,22 @@
+# Secrets — never commit
+.env
+
+# Disposable nginx cache
+cache-data/
+
+# rclone state (credentials come from env vars, this should stay empty)
+tools/.rclone/
+
+# Volunteer drop zone: media in, nothing tracked out.
+# album.yaml files are backed up to B2 by `make backup`, not by git.
+inbox/*
+!inbox/.gitkeep
+
+# Nightly backup log (see the crontab line in README)
+backup.log
+
+# Restore scratch space
+.restore-check/
+
+__pycache__/
+*.pyc

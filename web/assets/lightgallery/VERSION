@@ -1,0 +1,7 @@
+lightgallery 2.9.0
+licence: GPLv3 (https://github.com/sachinchoolur/lightGallery/blob/master/LICENSE)
+source:  https://cdn.jsdelivr.net/npm/lightgallery@2.9.0
+vendored: 2026-09-06
+
+Vendored deliberately: web/ must have zero runtime CDN dependencies.
+Re-vendor with: make vendor-lightgallery LG=<version>

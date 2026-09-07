@@ -1,0 +1,110 @@
+# libre-media — LibreMinds event photo & video gallery
+#
+# Ingress is caddy-docker-proxy ONLY. We publish no host ports, so nothing here
+# can collide with the 80/443 that caddy-proxy already owns.
+#
+# Routing (both services contribute labels to the SAME Caddy site block; Caddy's
+# directive ordering evaluates `handle` before a bare `reverse_proxy`):
+#     https://${SITE_HOST}/media/*  -> cache  (B2 caching proxy)
+#     https://${SITE_HOST}/*        -> web    (static pages + album JSON)
+
+name: libre-media
+
+networks:
+  # Owned by someone else. We attach, we never define or modify it. (CLAUDE.md §4)
+  caddy:
+    external: true
+    name: ${CADDY_NETWORK}
+  # NOT `internal: true` -- this is an ordinary bridge network. It exists so the
+  # `tools` container has outbound internet (rclone -> B2) without ever being
+  # attached to the caddy network, where caddy-docker-proxy would see it.
+  internal:
+    driver: bridge
+
+services:
+
+  # --- static pages ---------------------------------------------------------
+  web:
+    image: nginx:alpine
+    container_name: libre-media-web
+    restart: unless-stopped
+    networks: [caddy, internal]
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./webconf/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    environment:
+      # Restrict envsubst to our own variables so it can never eat an nginx
+      # runtime variable such as $uri or $document_root.
+      NGINX_ENVSUBST_FILTER: '^(WEB_|SITE_)'
+      WEB_MAX_AGE: ${WEB_MAX_AGE}
+      SITE_HOST: ${SITE_HOST}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      caddy: ${SITE_HOST}
+      caddy.reverse_proxy: "{{upstreams 80}}"
+      caddy.encode: "zstd gzip"
+
+  # --- B2 caching proxy -----------------------------------------------------
+  cache:
+    image: nginx:alpine
+    container_name: libre-media-cache
+    restart: unless-stopped
+    networks: [caddy, internal]
+    volumes:
+      - ./cache/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      # Runs as root before nginx starts, to make the bind-mounted cache dir
+      # writable by the unprivileged nginx worker.
+      - ./cache/05-cache-perms.sh:/docker-entrypoint.d/05-cache-perms.sh:ro
+      - ./cache-data:/var/cache/nginx/media
+    environment:
+      NGINX_ENVSUBST_FILTER: '^(B2_|CACHE_|MEDIA_|RESOLVER)'
+      B2_DOWNLOAD_HOST: ${B2_DOWNLOAD_HOST}
+      B2_BUCKET: ${B2_BUCKET}
+      CACHE_MAX_SIZE: ${CACHE_MAX_SIZE}
+      CACHE_MIN_FREE: ${CACHE_MIN_FREE}
+      CACHE_INACTIVE: ${CACHE_INACTIVE}
+      CACHE_KEYS_ZONE_SIZE: ${CACHE_KEYS_ZONE_SIZE}
+      MEDIA_MAX_AGE: ${MEDIA_MAX_AGE}
+      RESOLVER: ${RESOLVER}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      caddy: ${SITE_HOST}
+      caddy.handle: "/media/*"
+      caddy.handle.reverse_proxy: "{{upstreams 80}}"
+
+  # --- build/publish toolbox (never running; `docker compose run` only) ------
+  tools:
+    profiles: [tools]
+    build: ./tools
+    image: libre-media-tools:latest
+    # Non-root so files written into web/albums/ and inbox/ are owned by a real
+    # user. Defaults come from the Makefile (`id -u` / `id -g`) unless PUID and
+    # PGID are set in .env.
+    user: "${PUID:-0}:${PGID:-0}"
+    working_dir: /work
+    # No caddy network: this container must never appear to caddy-docker-proxy.
+    networks: [internal]
+    volumes:
+      - ./:/work
+    environment:
+      # rclone remote "b2" configured entirely from the environment, so no
+      # credential ever reaches a config file on disk. (CLAUDE.md §5)
+      RCLONE_CONFIG_B2_TYPE: b2
+      RCLONE_CONFIG_B2_ACCOUNT: ${B2_KEY_ID}
+      RCLONE_CONFIG_B2_KEY: ${B2_APP_KEY}
+      B2_BUCKET: ${B2_BUCKET}
+      SITE_HOST: ${SITE_HOST}
+      # Non-root user has no home inside the image.
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp
+    entrypoint: ["/bin/bash"]

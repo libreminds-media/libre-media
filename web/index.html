@@ -1,0 +1,99 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event Gallery — LibreMinds</title>
+<meta name="description" content="Photos and video from LibreMinds community events.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/assets/style.css">
+
+<!-- ===========================================================================
+     MEDIA URL CONTRACT — keep in sync with cache/nginx.conf.template
+
+         /media/<key>  ->  https://<B2_DOWNLOAD_HOST>/file/<B2_BUCKET>/<key>
+
+     Album cover thumbnails are stored relative to each album's `base`
+     ("events/<slug>/"), so a cover resolves to
+
+         /media/events/<slug>/thumb/<hash>.webp
+
+     Caddy routes /media/* to the `cache` container and everything else here.
+     The prefix itself lives in one place: MEDIA_BASE in /assets/config.js.
+     =========================================================================== -->
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="kicker">LibreMinds</p>
+    <h1>Event Gallery</h1>
+    <p class="lede">Photos and video from our community events. Everything here is
+      free to share under the licence noted on each album.</p>
+  </header>
+
+  <main>
+    <div id="status" class="notice">Loading albums…</div>
+    <ul class="albums" id="albums" hidden></ul>
+  </main>
+
+  <footer class="site">
+    <p>Built with <a href="https://www.lightgalleryjs.com/" rel="noopener">lightGallery</a>
+       (GPLv3). Media hosted on Backblaze B2.</p>
+  </footer>
+
+</div>
+
+<script src="/assets/config.js"></script>
+<script src="/assets/media.js"></script>
+<script>
+(async function () {
+  "use strict";
+  var statusEl = document.getElementById("status");
+  var listEl = document.getElementById("albums");
+
+  try {
+    var data = await LM.getJSON("/albums/index.json");
+    var albums = (data && data.albums) || [];
+
+    if (!albums.length) {
+      statusEl.innerHTML =
+        "No albums published yet. Publish one with " +
+        "<code>make publish SLUG=&lt;year&gt;-&lt;event-name&gt;</code>.";
+      return;
+    }
+
+    listEl.innerHTML = albums.map(function (a) {
+      // cover is relative to a.base unless it is already absolute (YouTube).
+      var cover = LM.mediaUrl(a.base, a.cover);
+      var href = "/album.html?a=" + encodeURIComponent(a.slug);
+      return '' +
+        '<li>' +
+          '<a class="album-card" href="' + href + '">' +
+            (cover
+              ? '<img class="cover" src="' + LM.esc(cover) + '" alt="" loading="lazy" decoding="async">'
+              : '<div class="cover"></div>') +
+            '<div class="body">' +
+              '<h2>' + LM.esc(a.title) + '</h2>' +
+              '<p class="sub">' + LM.esc(LM.formatDate(a.date)) +
+                ' &middot; ' + LM.plural(a.count || 0, "item", "items") +
+              '</p>' +
+            '</div>' +
+          '</a>' +
+        '</li>';
+    }).join("");
+
+    statusEl.hidden = true;
+    listEl.hidden = false;
+    document.title = "Event Gallery — LibreMinds";
+  } catch (err) {
+    statusEl.textContent = "Could not load the album list: " + err.message;
+    console.error(err);
+  }
+})();
+</script>
+
+</body>
+</html>

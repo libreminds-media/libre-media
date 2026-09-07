@@ -1,0 +1,173 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Album — LibreMinds</title>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/lightgallery/css/lightgallery-bundle.css">
+
+<!-- ===========================================================================
+     MEDIA URL CONTRACT — keep in sync with cache/nginx.conf.template
+
+         /media/<key>  ->  https://<B2_DOWNLOAD_HOST>/file/<B2_BUCKET>/<key>
+
+     This page loads /albums/<slug>.json. Every `thumb`, `src` and `poster` in
+     that manifest is relative to the manifest's own `base` field, which is
+     always "events/<slug>/". So a manifest entry
+
+         { "thumb": "thumb/ab12cd34ef56.webp", "src": "display/9f8e7d6c5b4a.jpg" }
+
+     in album 2025-kcd-bengaluru is fetched as
+
+         /media/events/2025-kcd-bengaluru/thumb/ab12cd34ef56.webp
+         /media/events/2025-kcd-bengaluru/display/9f8e7d6c5b4a.jpg
+
+     Caddy routes /media/* to the `cache` container, which rewrites it to the
+     B2 friendly URL and caches it. YouTube items are the one exception: their
+     src/thumb are already absolute https:// URLs and are used verbatim, never
+     prefixed. The prefix itself is MEDIA_BASE in /assets/config.js.
+     =========================================================================== -->
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <a class="backlink" href="/">&larr; All albums</a>
+    <p class="kicker" id="album-date"></p>
+    <h1 id="album-title">Loading…</h1>
+    <p class="lede" id="album-description"></p>
+    <div class="meta" id="album-meta"></div>
+  </header>
+
+  <main>
+    <div id="status" class="notice">Loading album…</div>
+    <div id="gallery" hidden></div>
+  </main>
+
+  <footer class="site">
+    <p><a href="/">All albums</a> &middot; Built with
+       <a href="https://www.lightgalleryjs.com/" rel="noopener">lightGallery</a> (GPLv3)</p>
+  </footer>
+
+</div>
+
+<script src="/assets/config.js"></script>
+<script src="/assets/media.js"></script>
+<!-- lightGallery core must load before its plugins. All vendored locally:
+     this page makes no request to any CDN. -->
+<script src="/assets/lightgallery/lightgallery.umd.js"></script>
+<script src="/assets/lightgallery/plugins/thumbnail/lg-thumbnail.umd.js"></script>
+<script src="/assets/lightgallery/plugins/zoom/lg-zoom.umd.js"></script>
+<script src="/assets/lightgallery/plugins/video/lg-video.umd.js"></script>
+<script src="/assets/lightgallery/plugins/fullscreen/lg-fullscreen.umd.js"></script>
+<script src="/assets/lightgallery/plugins/hash/lg-hash.umd.js"></script>
+<script src="/assets/lightgallery/plugins/share/lg-share.umd.js"></script>
+<script>
+(async function () {
+  "use strict";
+
+  var statusEl = document.getElementById("status");
+  var galleryEl = document.getElementById("gallery");
+
+  var slug = new URLSearchParams(location.search).get("a") || "";
+  // Slugs are <yyyy>-<event-name>; refuse anything that could escape the path.
+  if (!/^[a-z0-9][a-z0-9-]*$/i.test(slug)) {
+    statusEl.innerHTML = 'No album selected. <a href="/">Browse all albums</a>.';
+    return;
+  }
+
+  var album;
+  try {
+    album = await LM.getJSON("/albums/" + encodeURIComponent(slug) + ".json");
+  } catch (err) {
+    statusEl.innerHTML = 'Album <code>' + LM.esc(slug) + '</code> was not found. ' +
+                         '<a href="/">Browse all albums</a>.';
+    console.error(err);
+    return;
+  }
+
+  // --- header ---------------------------------------------------------------
+  document.title = album.title + " — LibreMinds";
+  document.getElementById("album-title").textContent = album.title;
+  document.getElementById("album-date").textContent = LM.formatDate(album.date);
+  document.getElementById("album-description").textContent = album.description || "";
+
+  var meta = [];
+  if (album.credit)  meta.push("Photos by " + album.credit);
+  if (album.license) meta.push(album.license);
+  meta.push(LM.plural((album.items || []).length, "item", "items"));
+  document.getElementById("album-meta").innerHTML =
+    meta.map(function (m) { return "<span>" + LM.esc(m) + "</span>"; }).join("");
+
+  // --- build the grid -------------------------------------------------------
+  // Built with the DOM API rather than an HTML string: the video plugin wants a
+  // JSON blob in data-video, and hand-escaping JSON into an attribute is exactly
+  // the kind of thing that breaks on one apostrophe in a filename.
+  var base = album.base || ("events/" + slug + "/");
+  var frag = document.createDocumentFragment();
+
+  (album.items || []).forEach(function (item, i) {
+    var a = document.createElement("a");
+    a.setAttribute("data-kind", item.type);
+    a.setAttribute("data-lg-size", (item.w || 1600) + "-" + (item.h || 1200));
+
+    var caption = item.title || album.title;
+    a.setAttribute("data-sub-html", "<h4>" + LM.esc(caption) + "</h4>" +
+      (album.credit ? "<p>" + LM.esc(album.credit) + "</p>" : ""));
+
+    if (item.type === "image") {
+      var full = LM.mediaUrl(base, item.src);
+      a.href = full;                       // works without JS, and lg reads it
+      a.setAttribute("data-src", full);
+
+    } else if (item.type === "video") {
+      var poster = LM.mediaUrl(base, item.poster);
+      a.setAttribute("data-poster", poster);
+      a.setAttribute("data-video", JSON.stringify({
+        source: [{ src: LM.mediaUrl(base, item.src), type: "video/mp4" }],
+        attributes: { preload: "none", controls: true, playsinline: true, poster: poster },
+      }));
+
+    } else if (item.type === "youtube") {
+      // Absolute URLs; never routed through /media/.
+      a.setAttribute("data-src", item.src);
+      a.setAttribute("data-poster", item.thumb);
+    }
+
+    var img = document.createElement("img");
+    img.src = LM.mediaUrl(base, item.thumb);
+    img.alt = caption ? caption + " (item " + (i + 1) + ")" : "Item " + (i + 1);
+    img.loading = "lazy";
+    img.decoding = "async";
+    a.appendChild(img);
+
+    frag.appendChild(a);
+  });
+
+  galleryEl.appendChild(frag);
+  statusEl.hidden = true;
+  galleryEl.hidden = false;
+
+  // --- lightGallery ---------------------------------------------------------
+  lightGallery(galleryEl, {
+    plugins: [lgThumbnail, lgZoom, lgVideo, lgFullscreen, lgHash, lgShare],
+    licenseKey: LM.CFG.LG_LICENSE_KEY,
+    selector: "a",
+    speed: 400,
+    // lg-hash writes #lg=<galleryId>&slide=<n>, so galleryId must be stable per
+    // album for deep links to survive. The slug is exactly that.
+    galleryId: slug,
+    hash: true,
+    download: true,
+    mobileSettings: { controls: true, showCloseIcon: true, download: true },
+    videojs: false,
+  });
+})();
+</script>
+
+</body>
+</html>
