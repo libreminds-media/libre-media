@@ -58,6 +58,7 @@ if [ "${IN_TOOLS:-0}" = "1" ]; then
     --immutable \
     --exclude "manifest.json" \
     --exclude ".cache.json" \
+    --exclude ".nochange" \
     --exclude ".tmp/**" \
     --transfers 8 --checkers 16 \
     --progress --stats-one-line
@@ -75,16 +76,32 @@ print('items:', len(m['items'])); \
     exit 0
   fi
 
-  info "installing manifest -> web/albums/${SLUG}.json"
-  cp "${BUILD}/manifest.json" "web/albums/${SLUG}.json"
+  # Every build stamps a fresh `generated` time into manifest.json, so without
+  # this check a republish that produced byte-identical media would still
+  # rewrite web/albums/<slug>.json and generate an empty-but-noisy commit.
+  # The marker file tells the host pass to skip the commit and push; the host
+  # deletes it before each run, so it can never be stale.
+  if python3 pipeline/manifest_changed.py \
+       "${BUILD}/manifest.json" "web/albums/${SLUG}.json"; then
 
-  info "rebuilding album index"
-  python3 pipeline/update_index.py
+    info "installing manifest -> web/albums/${SLUG}.json"
+    cp "${BUILD}/manifest.json" "web/albums/${SLUG}.json"
+
+    info "rebuilding album index"
+    python3 pipeline/update_index.py
+  else
+    info "no changes for ${SLUG}"
+    info "the rebuilt manifest matches the published one apart from its build"
+    info "timestamp, so web/albums/${SLUG}.json is left untouched"
+    touch "${BUILD}/.nochange"
+  fi
 
   # DELIBERATELY NO --immutable here. Album JSON is mutable by design: adding a
   # photo to an existing album rewrites <slug>.json and index.json, and
   # --immutable would make that fail. Only events/ (content-hashed media) is
   # immutable. Do not "fix" this by adding the flag.
+  # Mirrored either way: a no-op when nothing changed, and it repairs a previous
+  # run whose mirror failed after the local files were already updated.
   info "mirroring album JSON to b2:${B2_BUCKET}/_site/albums/"
   rclone copy web/albums "b2:${B2_BUCKET}/_site/albums/" \
     --transfers 4 --stats-one-line
@@ -129,6 +146,9 @@ fi
 TTY_FLAG=()
 [ -t 1 ] || TTY_FLAG=(-T)
 
+# Clear any marker from a previous run before the container can look at it.
+rm -f "inbox/${SLUG}/_build/.nochange"
+
 info "running build+upload inside the tools container"
 docker compose --profile tools run --rm "${TTY_FLAG[@]}" \
   -e IN_TOOLS=1 -e SLUG="$SLUG" -e DRY="$DRY" \
@@ -136,6 +156,14 @@ docker compose --profile tools run --rm "${TTY_FLAG[@]}" \
 
 if [ "$DRY" = "1" ]; then
   info "dry run complete -- nothing was uploaded, written or committed"
+  exit 0
+fi
+
+if [ -f "inbox/${SLUG}/_build/.nochange" ]; then
+  rm -f "inbox/${SLUG}/_build/.nochange"
+  info "nothing to commit or push for ${SLUG}"
+  echo
+  info "unchanged: https://$(grep -E '^SITE_HOST=' .env | cut -d= -f2-)/album.html?a=${SLUG}"
   exit 0
 fi
 

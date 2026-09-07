@@ -83,6 +83,7 @@ for f in docker-compose.yml Makefile README.md MIGRATE.md .env.example .gitignor
          cache/nginx.conf.template cache/05-cache-perms.sh \
          webconf/default.conf.template tools/Dockerfile \
          pipeline/build_album.py pipeline/update_index.py \
+         pipeline/manifest_changed.py \
          pipeline/publish.sh pipeline/backup.sh pipeline/restore.sh \
          web/index.html web/album.html web/assets/style.css \
          web/assets/config.js web/assets/media.js LICENSE \
