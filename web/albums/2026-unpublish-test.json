@@ -7,7 +7,7 @@
   "license": "CC0-1.0",
   "base": "events/2026-unpublish-test/",
   "generated": "2026-09-08T06:01:07+00:00",
-  "count": 3,
+  "count": 2,
   "items": [
     {
       "type": "image",
@@ -17,15 +17,6 @@
       "thumb": "thumb/b45d591f44b9.webp",
       "src": "display/0440947f6904.jpg",
       "title": "one"
-    },
-    {
-      "type": "image",
-      "id": "a00c550f4321",
-      "w": 1200,
-      "h": 800,
-      "thumb": "thumb/317b6e069a8d.webp",
-      "src": "display/a00c550f4321.jpg",
-      "title": "three"
     },
     {
       "type": "image",
