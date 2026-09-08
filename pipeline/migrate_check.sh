@@ -84,6 +84,8 @@ for f in docker-compose.yml Makefile README.md MIGRATE.md .env.example .gitignor
          webconf/default.conf.template tools/Dockerfile \
          pipeline/build_album.py pipeline/update_index.py \
          pipeline/manifest_changed.py pipeline/import.sh \
+         pipeline/cache_purge.sh pipeline/unpublish.sh \
+         pipeline/unpublish_photo.sh pipeline/remove_item.py \
          pipeline/publish.sh pipeline/backup.sh pipeline/restore.sh \
          web/index.html web/album.html web/assets/style.css \
          web/assets/config.js web/assets/media.js LICENSE \

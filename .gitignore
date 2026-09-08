@@ -16,6 +16,9 @@ inbox/*
 backup.log
 prune.log
 
+# Dry-run markers for the unpublish targets
+.unpublish/
+
 # Restore scratch space
 .restore-check/
 

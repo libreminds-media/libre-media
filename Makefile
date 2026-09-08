@@ -15,6 +15,8 @@ COMPOSE := docker compose
 NGINX_IMAGE := nginx:alpine
 SLUG ?=
 SRC ?=
+PREFIX ?=
+ID ?=
 DRY ?= 0
 TARGET ?= .
 LG ?= 2.9.0
@@ -30,7 +32,8 @@ endif
 
 .PHONY: help up down restart logs check build publish publish-dry index \
         backup restore cache-stats cache-clear migrate-check shell \
-        vendor-lightgallery tree env-check import import-dry onedrive-ls
+        vendor-lightgallery tree env-check import import-dry onedrive-ls \
+        cache-purge unpublish unpublish-photo
 
 help:
 	@echo "libre-media — make targets"
@@ -60,6 +63,11 @@ help:
 	@echo "    make cache-stats      media cache size and disk headroom"
 	@echo "    make cache-clear      empty the media cache (safe; it refills from B2)"
 	@echo "    make migrate-check    can this project move to a new server today?"
+	@echo
+	@echo "  Taking content down (DRY=1 first is mandatory)"
+	@echo "    make unpublish SLUG=2024-my-event DRY=1              whole album"
+	@echo "    make unpublish-photo SLUG=... ID=<hash> DRY=1        one item"
+	@echo "    make cache-purge PREFIX=events/2024-my-event         evict from the cache"
 	@echo "    make shell            a shell in the tools container"
 	@echo
 	@echo "  Add DRY=1 to publish, backup or restore to change nothing."
@@ -167,6 +175,24 @@ cache-stats:
 		"$$(grep -E '^CACHE_MIN_FREE=' .env 2>/dev/null | cut -d= -f2-)"
 	@echo "==> filesystem"
 	@df -h . | sed '1d;s/^/    /'
+
+# Evict specific media from the local cache. Deleting from B2 does not take
+# anything off the site on its own -- see README "Taking content down".
+cache-purge:
+	@test -n "$(PREFIX)" || { echo "make: PREFIX is required, e.g. make cache-purge PREFIX=events/2024-my-event"; exit 1; }
+	@PREFIX="$(PREFIX)" DRY="$(DRY)" ./pipeline/cache_purge.sh
+
+# Take a whole album down. DRY=1 first is mandatory -- see README
+# "Taking content down".
+unpublish:
+	@test -n "$(SLUG)" || { echo "make: SLUG is required, e.g. make unpublish SLUG=2024-my-event DRY=1"; exit 1; }
+	@SLUG="$(SLUG)" DRY="$(DRY)" ./pipeline/unpublish.sh
+
+# Take a single photo or video down, leaving the album in place.
+unpublish-photo:
+	@test -n "$(SLUG)" || { echo "make: SLUG is required"; exit 1; }
+	@test -n "$(ID)"   || { echo "make: ID is required -- the item id from web/albums/<slug>.json"; exit 1; }
+	@SLUG="$(SLUG)" ID="$(ID)" DRY="$(DRY)" ./pipeline/unpublish_photo.sh
 
 cache-clear:
 	@echo "This deletes every cached media object in cache-data/."

@@ -499,6 +499,87 @@ and must be copied by hand to a new server — see MIGRATE.md.
 
 ---
 
+## Taking content down
+
+Someone withdraws consent, a photo turns out to be of a minor, a copyright
+claim arrives. Three targets, smallest blast radius first.
+
+**Every one requires `DRY=1` first.** The real run refuses unless a dry run for
+that exact slug (and item) happened within the last ten minutes, prints the
+object count, and makes you type the slug at a terminal. It also refuses if the
+working tree is dirty, because it commits.
+
+Nothing here uses `rclone purge` or `rclone sync` — objects are listed first and
+deleted from that explicit list, so a prefix typo cannot take out a neighbouring
+album and there is always a listing to audit against.
+
+### One photo or video
+
+```bash
+# ID is the item's "id" in web/albums/<slug>.json -- also its filename.
+sudo -u libremedia make unpublish-photo SLUG=2024-kcd-kerala ID=d071f27934e3 DRY=1
+sudo -u libremedia make unpublish-photo SLUG=2024-kcd-kerala ID=d071f27934e3
+```
+
+Deletes its thumbnail, display image and (for video) poster and MP4 from B2,
+removes it from the album manifest, **deletes the local original from
+`inbox/`**, prunes it from the build cache, rebuilds the index, mirrors,
+commits, pushes, and purges it from the cache.
+
+Deleting the local original is not optional. Leave it and the next
+`make publish` rebuilds the photo, re-uploads it, and puts it back — a takedown
+that silently undoes itself.
+
+### A whole album
+
+```bash
+sudo -u libremedia make unpublish SLUG=2024-kcd-kerala DRY=1
+sudo -u libremedia make unpublish SLUG=2024-kcd-kerala
+```
+
+Same, for everything: all `events/<slug>/` objects, the mirrored album JSON, the
+backed-up `album.yaml`, `web/albums/<slug>.json`, and `inbox/<slug>/`.
+
+### Just evict from the cache
+
+```bash
+sudo -u libremedia make cache-purge PREFIX=events/2024-kcd-kerala
+sudo -u libremedia make cache-purge PREFIX=events/2024-kcd-kerala/display/ab12cd34ef56.jpg
+sudo -u libremedia make cache-purge PREFIX=events/2024-kcd-kerala DRY=1
+```
+
+The other two call this for you. Use it directly if you deleted something from
+B2 by hand.
+
+> The cache key is **not** the URL you see in a browser.
+> `cache/nginx.conf.template` rewrites `/media/<path>` to
+> `/file/<bucket>/<path>` *before* `proxy_cache_key` is evaluated, so nginx
+> stores `KEY: /file/libreminds-media/events/…`. `PREFIX` is given in
+> browser terms and translated for you. This matters if you ever purge by
+> hand: matching the wrong form finds nothing and looks exactly like success,
+> which is why the target always prints a count.
+
+### What "taken down" actually means
+
+Be precise with whoever asked, because three different caches are involved.
+
+| Where | When it stops being available |
+|---|---|
+| **This site** | Immediately, once `cache-purge` has run. Until then the local cache serves it for up to `CACHE_INACTIVE` (30 days) even though B2 no longer has it. |
+| **A direct B2 URL** | Only when the B2 delete happens. The bucket is public, so anyone who saved `https://<b2-host>/file/<bucket>/events/…` keeps access until then. |
+| **A browser that already loaded it** | Up to **a year**. Media is served `Cache-Control: public, max-age=31536000, immutable`, and we cannot reach into someone's browser. |
+
+So: you can promise the image is off the site and off B2 within minutes. You
+cannot promise it has vanished from every device that already showed it, and
+you should not imply otherwise. If someone already downloaded or screenshotted
+it, nothing technical here helps at all.
+
+If the request is urgent and you want it off the site *now*, before working out
+which item it is, `make cache-clear` empties the whole cache — but that only
+helps if the object is also gone from B2, since the next request re-fetches it.
+
+---
+
 ## Cache and disk
 
 `cache-data/` is a disposable nginx `proxy_cache`. Deleting it costs nothing but
