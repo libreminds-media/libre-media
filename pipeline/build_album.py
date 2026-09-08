@@ -410,15 +410,23 @@ def main() -> int:
 
     items: list[dict] = []
 
+    n_built = 0
+    n_cached = 0
+
     for src in photos:
         key = source_key(src)
         hit = cache.get(key)
         if hit and outputs_present(out, hit):
-            log(f"photo {src.name} -> cached")
+            # Deliberately silent. On a republish every one of these is a
+            # no-op, and an 866-photo album produced 866 identical "cached"
+            # lines -- 97% of the log saying nothing happened. Counted and
+            # summarised below instead; anything actually built still prints.
+            n_cached += 1
             items.append(hit)
             new_cache[key] = hit
             continue
         item = build_photo(src, out)
+        n_built += 1
         items.append(item)
         new_cache[key] = item
 
@@ -426,16 +434,20 @@ def main() -> int:
         key = source_key(src)
         hit = cache.get(key)
         if hit and outputs_present(out, hit):
-            log(f"video {src.name} -> cached (skipping transcode)")
+            n_cached += 1
             items.append(hit)
             new_cache[key] = hit
             continue
         item = build_video(src, out, tmpdir)
+        n_built += 1
         items.append(item)
         new_cache[key] = item
 
     for vid in youtube:
         items.append(build_youtube(vid))
+
+    if n_cached:
+        log(f"{n_cached} cached (unchanged since the last build, not re-encoded)")
 
     if not items:
         die(f"{album_dir} produced no items -- is photos/ or videos/ empty?")
@@ -463,7 +475,10 @@ def main() -> int:
     except OSError:
         pass
 
-    print(f"built {len(items)} item(s) -> {out}/manifest.json")
+    summary = f"{n_built} built, {n_cached} cached"
+    if youtube:
+        summary += f", {len(youtube)} youtube"
+    print(f"built {len(items)} item(s) ({summary}) -> {out}/manifest.json")
     return 0
 
 
