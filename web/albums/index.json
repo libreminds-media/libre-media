@@ -10,6 +10,17 @@
       "count": 2,
       "cover": "thumb/b672b23eaff1.webp",
       "cover_absolute": false
+    },
+    {
+      "slug": "2024-kcd-kerala",
+      "title": "KCD Kerala 2024",
+      "date": "2024-02-03",
+      "description": "First-ever KCD event in Kerala. Kubernetes Community Days Kerala 2024 \u2014 talks, hallway track and the community that made it happen.",
+      "credit": "Kubernetes Kerala, LibreMinds",
+      "base": "events/2024-kcd-kerala/",
+      "count": 866,
+      "cover": "thumb/d9adba73756c.webp",
+      "cover_absolute": false
     }
   ]
 }
