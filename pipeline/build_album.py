@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import hashlib
 import io
 import json
@@ -61,6 +62,10 @@ VIDEO_PRESET = "medium"
 # Media is licensed per album via album.yaml. This is the fallback when an
 # album.yaml omits the field. See README "Licence".
 DEFAULT_LICENSE = "CC BY-SA 4.0"
+
+# A YouTube video id is exactly 11 characters of [A-Za-z0-9_-]. Anything else
+# in the `youtube:` list is a mistake we refuse rather than publish.
+YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".heic", ".bmp", ".gif"}
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm", ".mts", ".3gp"}
@@ -236,6 +241,56 @@ def build_video(src: Path, out: Path, tmpdir: Path) -> dict:
 
 # --- youtube ----------------------------------------------------------------
 
+def parse_youtube(raw, yaml_path: Path) -> list[str]:
+    """Validate album.yaml's `youtube:` field into a list of video ids.
+
+    This is strict on purpose. `youtube: <a url>` is a single string, and the
+    obvious `for vid in youtube` iterates a string one CHARACTER at a time --
+    so a pasted channel URL silently became 34 items with ids "h", "t", "t"...
+    each rendering as a dead tile in the gallery. Publishing 34 broken embeds
+    without a word is far worse than refusing to build.
+    """
+    if raw is None or raw == "":
+        return []
+
+    if isinstance(raw, str):
+        die(f"{yaml_path}: 'youtube' must be a LIST of video ids, not a single "
+            f"string.\n"
+            f"  Got: {raw!r}\n"
+            f"{_youtube_hint(raw)}"
+            f"  Correct form:\n"
+            f"    youtube:\n"
+            f"      - dQw4w9WgXcQ\n"
+            f"      - kJQP7kiw5Fk")
+
+    if not isinstance(raw, (list, tuple)):
+        die(f"{yaml_path}: 'youtube' must be a list of video ids, "
+            f"got {type(raw).__name__}")
+
+    ids: list[str] = []
+    for entry in raw:
+        vid = str(entry).strip()
+        if not vid:
+            continue
+        if not YOUTUBE_ID_RE.match(vid):
+            die(f"{yaml_path}: {vid!r} is not a YouTube video id.\n"
+                f"  An id is exactly 11 characters of letters, digits, - and _.\n"
+                f"{_youtube_hint(vid)}"
+                f"  A channel or playlist URL cannot be used: list the individual\n"
+                f"  videos you want in the album.")
+        ids.append(vid)
+    return ids
+
+
+def _youtube_hint(value: str) -> str:
+    """If a URL contains an extractable video id, name it so the fix is obvious."""
+    m = (re.search(r"(?:youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})", value)
+         or re.search(r"[?&]v=([A-Za-z0-9_-]{11})", value))
+    if m:
+        return f"  That URL's video id is: {m.group(1)}\n"
+    return ""
+
+
 def build_youtube(vid: str) -> dict:
     """YouTube items carry ABSOLUTE urls. The front-end must not prefix /media/.
 
@@ -331,7 +386,7 @@ def main() -> int:
     videos = sorted((p for p in (album_dir / "videos").rglob("*")
                      if p.is_file() and p.suffix.lower() in VIDEO_EXT),
                     key=lambda p: str(p).lower())
-    youtube = meta.get("youtube") or []
+    youtube = parse_youtube(meta.get("youtube"), yaml_path)
 
     if not HEIF_OK and any(p.suffix.lower() == ".heic" for p in photos):
         die("this album contains .heic files but pillow-heif is not available.\n"
