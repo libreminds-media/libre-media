@@ -61,7 +61,7 @@ if [ "${IN_TOOLS:-0}" = "1" ]; then
     --exclude ".nochange" \
     --exclude ".tmp/**" \
     --transfers 8 --checkers 16 \
-    --progress --stats-one-line
+    --stats 30s --stats-log-level NOTICE
 
   if [ "$DRY" = "1" ]; then
     info "would install ${BUILD}/manifest.json -> web/albums/${SLUG}.json"
@@ -96,6 +96,11 @@ print('items:', len(m['items'])); \
     touch "${BUILD}/.nochange"
   fi
 
+  # Periodic labelled stats, not --progress: --progress paints with ANSI cursor
+  # movement and writes no newlines, so a redirected publish log becomes one
+  # unreadable blob. Publishing 866 photos is a long, backgrounded job whose log
+  # is the only record of what happened, so it has to survive tail and grep.
+  #
   # DELIBERATELY NO --immutable here. Album JSON is mutable by design: adding a
   # photo to an existing album rewrites <slug>.json and index.json, and
   # --immutable would make that fail. Only events/ (content-hashed media) is
@@ -104,7 +109,7 @@ print('items:', len(m['items'])); \
   # run whose mirror failed after the local files were already updated.
   info "mirroring album JSON to b2:${B2_BUCKET}/_site/albums/"
   rclone copy web/albums "b2:${B2_BUCKET}/_site/albums/" \
-    --transfers 4 --stats-one-line
+    --transfers 4 --stats-one-line --stats-log-level NOTICE
 
   info "container work done"
   exit 0
