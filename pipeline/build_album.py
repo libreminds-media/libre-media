@@ -283,11 +283,24 @@ def parse_youtube(raw, yaml_path: Path) -> list[str]:
 
 
 def _youtube_hint(value: str) -> str:
-    """If a URL contains an extractable video id, name it so the fix is obvious."""
+    """Explain what the offending value actually is, so the fix is obvious."""
     m = (re.search(r"(?:youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})", value)
          or re.search(r"[?&]v=([A-Za-z0-9_-]{11})", value))
     if m:
         return f"  That URL's video id is: {m.group(1)}\n"
+
+    # A playlist is the other thing people reach for, and it looks enough like
+    # an id to be confusing. It is not one: this project embeds individual
+    # videos, so a playlist has to be expanded into the videos you want.
+    if re.search(r"[?&]list=", value) or re.match(r"^(PL|UU|LL|RD|OL|FL)[A-Za-z0-9_-]{10,}$", value):
+        return ("  That looks like a PLAYLIST id, not a video id.\n"
+                "  This gallery embeds individual videos, so open the playlist and\n"
+                "  list the ids of the videos you actually want in the album --\n"
+                "  each is the 11 characters after 'v=' in the video's own URL.\n")
+
+    if re.search(r"youtube\.com/(@|c/|channel/|user/)", value):
+        return ("  That looks like a CHANNEL url, not a video id. A channel has no\n"
+                "  single video to embed; list the individual videos you want.\n")
     return ""
 
 
