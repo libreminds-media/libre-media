@@ -1,17 +1,6 @@
 {
   "albums": [
     {
-      "slug": "2026-unpublish-test",
-      "title": "Unpublish Test",
-      "date": "2026-01-01",
-      "description": "Throwaway album generated to prove the takedown path end to end. Delete on sight.",
-      "credit": "Generated test pattern",
-      "base": "events/2026-unpublish-test/",
-      "count": 2,
-      "cover": "thumb/b45d591f44b9.webp",
-      "cover_absolute": false
-    },
-    {
       "slug": "2024-kcd-kerala",
       "title": "KCD Kerala 2024",
       "date": "2024-02-03",
