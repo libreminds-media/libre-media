@@ -82,8 +82,13 @@ if [ "${IN_TOOLS:-0}" = "1" ]; then
     "${RCLONE_DRY[@]}"
     --ignore-case
     --size-only
-    --progress
-    --stats-one-line
+    # Periodic labelled stats rather than --progress. --progress paints with
+    # ANSI cursor moves and writes NO newlines at all, so a redirected log
+    # becomes one unreadable 100 KB line that tail and grep cannot split.
+    # These flags emit a newline-terminated block every 30s, and a final
+    # Transferred/Errors/Elapsed summary that is trivial to extract.
+    --stats 30s
+    --stats-log-level NOTICE
     --transfers 8
     --checkers 16
   )

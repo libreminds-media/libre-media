@@ -380,6 +380,42 @@ interrupted import resumes rather than starting over.
 If `album.yaml` already exists it is left alone; import never overwrites your
 metadata.
 
+### Long imports
+
+A large event is gigabytes and takes many minutes. Run it detached so a dropped
+SSH connection cannot kill it half way:
+
+```bash
+sudo -u libremedia tmux new-session -d -s kcdimport \
+  'make import SLUG=2024-kcd-kerala SRC=kcd_upload \
+     > inbox/2024-kcd-kerala/import.log 2>&1'
+
+sudo -u libremedia tmux attach -t kcdimport      # Ctrl-B then D to detach
+tail -f inbox/2024-kcd-kerala/import.log
+```
+
+rclone reports progress every 30 seconds as a labelled block, so the log stays
+readable and greppable:
+
+```
+Transferred:        4.512 GiB / 9.100 GiB, 50%, 12.345 MiB/s, ETA 6m20s
+Checks:               866 / 866, 100%
+Elapsed time:       6m12.0s
+```
+
+Transfers pause occasionally — OneDrive throttles a long burst and rclone backs
+off quietly. A frozen byte count with a falling rate and a climbing ETA is that
+backoff, not a hang; it clears itself. Look for `Errors:` in the log before
+concluding anything is wrong.
+
+When it finishes, verify against the source rather than trusting the transfer:
+
+```bash
+sudo -u libremedia docker compose --profile tools run --rm -T tools -lc \
+  'rclone check "onedrive:kcd_upload" inbox/2024-kcd-kerala/photos --size-only --one-way'
+# want: 0 differences found
+```
+
 ### Share links do not work
 
 **A OneDrive share link is not a path and rclone cannot use one.** The
