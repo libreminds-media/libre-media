@@ -1,0 +1,40 @@
+{
+  "slug": "2026-unpublish-test",
+  "title": "Unpublish Test",
+  "date": "2026-01-01",
+  "description": "Throwaway album generated to prove the takedown path end to end. Delete on sight.",
+  "credit": "Generated test pattern",
+  "license": "CC0-1.0",
+  "base": "events/2026-unpublish-test/",
+  "generated": "2026-09-08T06:01:07+00:00",
+  "count": 3,
+  "items": [
+    {
+      "type": "image",
+      "id": "0440947f6904",
+      "w": 1200,
+      "h": 800,
+      "thumb": "thumb/b45d591f44b9.webp",
+      "src": "display/0440947f6904.jpg",
+      "title": "one"
+    },
+    {
+      "type": "image",
+      "id": "a00c550f4321",
+      "w": 1200,
+      "h": 800,
+      "thumb": "thumb/317b6e069a8d.webp",
+      "src": "display/a00c550f4321.jpg",
+      "title": "three"
+    },
+    {
+      "type": "image",
+      "id": "e12ddc6d2b4e",
+      "w": 1200,
+      "h": 800,
+      "thumb": "thumb/4f4f34c76723.webp",
+      "src": "display/e12ddc6d2b4e.jpg",
+      "title": "two"
+    }
+  ]
+}
