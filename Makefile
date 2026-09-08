@@ -128,7 +128,10 @@ publish-dry: env-check
 	SLUG="$(SLUG)" DRY=1 ./pipeline/publish.sh
 
 index: env-check
-	$(COMPOSE) --profile tools run --rm -T tools pipeline/update_index.py
+	@# The tools image's entrypoint is bash, so the script must be handed to
+	@# python3 explicitly -- passing the .py path alone makes bash try to
+	@# interpret Python as shell.
+	$(COMPOSE) --profile tools run --rm -T tools -lc 'python3 pipeline/update_index.py'
 
 # --- OneDrive import -------------------------------------------------------
 
