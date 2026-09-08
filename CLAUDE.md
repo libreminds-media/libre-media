@@ -21,6 +21,15 @@ are served through a local nginx caching proxy under `/media/`.
 6. **Media files are immutable.** Content-hashed filenames; never overwrite, only add.
 7. Ask before: starting/stopping containers, deleting anything, running `rclone sync`
    (sync can delete), or changing anything in `.env`.
+8. **Removing content = B2 delete + manifest update + cache purge, always all three.**
+   Any one alone leaves the content reachable: B2 delete alone still serves from the
+   local cache for up to 30 days; a manifest edit alone leaves the object at its
+   direct URL; a cache purge alone re-fetches it on the next request. Use
+   `make unpublish` / `make unpublish-photo`, which do all three in the right order
+   (cache last, or it just re-caches). Note the cache key is
+   `/file/<bucket>/…`, **not** `/media/…` — the nginx rewrite runs before
+   `proxy_cache_key` is evaluated, so purging by the browser-facing path silently
+   matches nothing. See README "Taking content down".
 
 ## Architecture
 
