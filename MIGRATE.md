@@ -39,6 +39,12 @@ which were never on the server's critical path.
    # CADDY_INGRESS_NETWORKS=caddy   <- this value goes in CADDY_NETWORK
    ```
 3. Ports 80 and 443 reachable from the internet (Caddy needs them for ACME).
+   This project publishes **no host ports of its own** — `web` and `cache`
+   expose container port 80 and are reached only through caddy-docker-proxy on
+   the `caddy` network. A host firewall that permits just 80/443 (plus whatever
+   SSH port you use) is therefore enough, and is what the original server runs.
+   If a future change ever adds a `ports:` mapping here, expect it to be
+   unreachable from outside and route it through Caddy labels instead.
 4. Enough disk for the media cache — see `CACHE_MAX_SIZE` and `CACHE_MIN_FREE`.
 5. A dedicated service account and group (`libremedia`), added to `docker`.
    See step 2b.

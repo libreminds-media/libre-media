@@ -279,10 +279,38 @@ of `web/albums/` and `inbox/`.
 Volunteers get a personal account added to the `libremedia` group, and SFTP
 access to `inbox/` only. They never get docker access and never run `publish`.
 
+> **This host's SSH is key-only, on a non-standard port.** Verified on
+> 2026-10-22: `Port 511`, `PasswordAuthentication no`, and a host firewall that
+> admits only 80/443, SSH 511 and WireGuard 51820 from outside. So a volunteer
+> needs an SSH **public key** installed — `--disabled-password` below is not an
+> obstacle to add later, it is the point — and must be told the port. Their
+> client needs:
+>
+> ```
+> sftp -P 511 alice@photos.libreminds.org
+> ```
+>
+> or, in `~/.ssh/config` on their machine:
+>
+> ```
+> Host libreminds
+>     HostName photos.libreminds.org
+>     Port 511
+>     User alice
+> ```
+>
+> A volunteer who reports "connection refused" is almost always using port 22.
+
 ```bash
 # As root, once per volunteer:
 adduser --disabled-password --gecos "" alice
 usermod -aG libremedia alice          # they must log out and back in
+
+# Install their public key -- without this they cannot log in at all,
+# because password authentication is disabled host-wide.
+install -d -m 700 -o alice -g alice /home/alice/.ssh
+install -m 600 -o alice -g alice /dev/null /home/alice/.ssh/authorized_keys
+$EDITOR /home/alice/.ssh/authorized_keys     # paste the key they send you
 
 # They upload over SFTP to:
 #   /home/libre-media/inbox/<year>-<event-name>/{album.yaml,photos/,videos/}
