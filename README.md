@@ -640,7 +640,15 @@ the derivatives, and the volunteers have their own copies.
 # Verify the album is complete in B2 before removing anything local.
 sudo -u libremedia docker compose --profile tools run --rm -T tools -lc \
   'rclone lsf -R --files-only "b2:$B2_BUCKET/events/2024-kcd-kerala/" | wc -l'
-# compare against: jq .count web/albums/2024-kcd-kerala.json  x2 (display + thumb)
+
+# Compare against MEDIA items x2 (one display + one thumb each) -- NOT .count.
+# youtube items are in .count but have no B2 objects at all, so counting them
+# makes a complete album look short and blocks a legitimate cleanup:
+python3 -c "
+import json
+m = json.load(open('web/albums/2024-kcd-kerala.json'))
+media = [i for i in m['items'] if i['type'] != 'youtube']
+print(f'count={m[\"count\"]}  media={len(media)}  expected B2 objects={len(media)*2}')"
 
 # Then remove the originals and the local build, keeping album.yaml.
 sudo -u libremedia rm -rf inbox/2024-kcd-kerala/photos inbox/2024-kcd-kerala/_build
@@ -659,6 +667,17 @@ sudo -u libremedia make import SLUG=2024-kcd-kerala SRC="kcd_upload"
 ```
 
 **`build_album.py` refuses to publish an album whose sources have vanished.**
+This is not theoretical — it fired on KCD Kerala the moment its originals were
+removed after the YouTube id was added:
+
+```
+building 2024-kcd-kerala: 0 photo(s), 0 video(s), 1 youtube link(s)
+build_album: error: inbox/2024-kcd-kerala/photos/ and videos/ are empty, but
+  web/albums/2024-kcd-kerala.json already publishes 866 media item(s).
+  Building now would replace that album with 1 item(s) and orphan the
+  uploaded media.
+```
+
 Without that guard, deleting the originals and then adding a `youtube:` id would
 build a *one-item* manifest and publish it — silently replacing a 866-photo
 album with a single video tile and orphaning the uploaded media. With no
