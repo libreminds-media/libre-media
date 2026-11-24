@@ -51,11 +51,20 @@ if [ "${IN_TOOLS:-0}" = "1" ]; then
 
   info "uploading media to b2:${B2_BUCKET}/events/${SLUG}/"
   # `copy`, never `sync` -- sync can delete, and media is immutable (CLAUDE.md §6,§7).
-  # --immutable makes rclone fail rather than overwrite an existing object, which
-  # is the belt to the content-hashed-filename braces.
+  #
+  # --immutable makes rclone fail rather than overwrite an existing object: the
+  # belt to the content-hashed-filename braces. --checksum is not optional
+  # alongside it. By default rclone compares modification times, and a re-encode
+  # produces byte-identical content with a NEW mtime -- so plain --immutable
+  # failed all 1732 objects with "Timestamp mismatch between immutable objects"
+  # when republishing KCD after re-importing its originals. That is the exact
+  # recovery path README documents, so the documented workflow was broken.
+  # --checksum compares content instead, which is the only thing that means
+  # anything for content-addressed storage: a mismatch at the same filename
+  # would be a hash collision or B2 corruption, and still fails loudly.
   rclone copy "${BUILD}" "b2:${B2_BUCKET}/events/${SLUG}/" \
     "${RCLONE_DRY[@]}" \
-    --immutable \
+    --immutable --checksum \
     --exclude "manifest.json" \
     --exclude ".cache.json" \
     --exclude ".nochange" \
