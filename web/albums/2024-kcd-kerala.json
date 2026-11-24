@@ -6,8 +6,8 @@
   "credit": "Kubernetes Kerala, LibreMinds",
   "license": "CC BY-SA 4.0",
   "base": "events/2024-kcd-kerala/",
-  "generated": "2026-09-08T05:16:40+00:00",
-  "count": 866,
+  "generated": "2026-11-24T07:29:57+00:00",
+  "count": 867,
   "items": [
     {
       "type": "image",
@@ -7802,6 +7802,15 @@
       "thumb": "thumb/1647e29f4ba6.webp",
       "src": "display/8329fa934cf2.jpg",
       "title": "1R9A4542"
+    },
+    {
+      "type": "youtube",
+      "id": "hz87VclZy9I",
+      "w": 1280,
+      "h": 720,
+      "thumb": "https://i.ytimg.com/vi/hz87VclZy9I/hqdefault.jpg",
+      "src": "https://www.youtube.com/watch?v=hz87VclZy9I",
+      "title": ""
     }
   ]
 }
