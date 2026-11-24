@@ -6,8 +6,8 @@
   "credit": "DevOpsDays Kerala volunteers",
   "license": "CC BY-SA 4.0",
   "base": "events/2024-devopsdays-kerala/",
-  "generated": "2026-11-24T06:17:13+00:00",
-  "count": 717,
+  "generated": "2026-11-24T15:35:58+00:00",
+  "count": 718,
   "items": [
     {
       "type": "image",
@@ -6461,6 +6461,15 @@
       "thumb": "thumb/66b7acbf0671.webp",
       "src": "display/0e48b9ebae20.jpg",
       "title": "DSC09440"
+    },
+    {
+      "type": "youtube",
+      "id": "T2C_MQ3ZUcc",
+      "w": 1280,
+      "h": 720,
+      "thumb": "https://i.ytimg.com/vi/T2C_MQ3ZUcc/hqdefault.jpg",
+      "src": "https://www.youtube.com/watch?v=T2C_MQ3ZUcc",
+      "title": ""
     }
   ]
 }
