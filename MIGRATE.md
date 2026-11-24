@@ -463,6 +463,20 @@ explain. Recorded so a future maintainer does not have to rediscover them, or
   gallery's file ownership to one human's account lifecycle; publishing broke
   the moment `PUID` and the real owner disagreed. `libremedia` has a locked
   password and exists only for this.
+- **Cached media never expires, and that is deliberate.** `proxy_cache_valid
+  200 206` is **365d**, with no `proxy_cache_revalidate` and no
+  `proxy_cache_background_update`. Media filenames are content hashes, so a
+  cached object cannot go stale in any meaningful sense: a changed photo is a
+  different filename, and a removed one is evicted explicitly by
+  `make cache-purge`. The original 30-day validity achieved nothing and cost
+  something — entries from the first import expired and then sat permanently at
+  `x-cache: STALE`, serving correctly but revalidating against B2 forever to
+  confirm byte-identical objects. Eviction is `inactive=` on
+  `proxy_cache_path`: entries nobody requests are dropped, which is the policy
+  actually wanted. Note that changing these directives does not re-date existing
+  entries — they keep the validity they were cached with, so after such a change
+  run `make cache-purge PREFIX=events/<slug>` to force a clean re-fetch.
+
 - **Both cron jobs run from root's crontab, not `libremedia`'s.** Both need the
   Docker daemon. Running them as `libremedia` would have required no extra
   privilege — it is already in `docker` — so it would have added no isolation,
