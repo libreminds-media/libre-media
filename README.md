@@ -629,6 +629,45 @@ it a mid-file seek would either bypass the cache or refetch the whole file.
 
 ---
 
+## Reclaiming disk from published albums
+
+Originals are the bulk of the disk: KCD Kerala was 9.1 GiB of originals against
+298 MB of published derivatives. Once an album is published and verified, the
+originals in `inbox/<slug>/photos/` are no longer needed to serve it — B2 holds
+the derivatives, and the volunteers have their own copies.
+
+```bash
+# Verify the album is complete in B2 before removing anything local.
+sudo -u libremedia docker compose --profile tools run --rm -T tools -lc \
+  'rclone lsf -R --files-only "b2:$B2_BUCKET/events/2024-kcd-kerala/" | wc -l'
+# compare against: jq .count web/albums/2024-kcd-kerala.json  x2 (display + thumb)
+
+# Then remove the originals and the local build, keeping album.yaml.
+sudo -u libremedia rm -rf inbox/2024-kcd-kerala/photos inbox/2024-kcd-kerala/_build
+```
+
+Keep `album.yaml` — it is the only copy of the hand-written metadata, and it is
+tiny. `make backup` mirrors it to `b2:<bucket>/_site/inbox/<slug>/` nightly, so
+`make restore` brings it back.
+
+**What you give up:** that album can no longer be rebuilt or republished. Adding
+a YouTube id, fixing a caption, re-encoding at a different size — all need the
+originals back. To re-import them from OneDrive:
+
+```bash
+sudo -u libremedia make import SLUG=2024-kcd-kerala SRC="kcd_upload"
+```
+
+**`build_album.py` refuses to publish an album whose sources have vanished.**
+Without that guard, deleting the originals and then adding a `youtube:` id would
+build a *one-item* manifest and publish it — silently replacing a 866-photo
+album with a single video tile and orphaning the uploaded media. With no
+`youtube:` id it fails anyway ("produced no items"), so the guard covers the
+case that would otherwise pass quietly. If you genuinely want an album gone, use
+`make unpublish`, which removes the B2 objects too.
+
+---
+
 ## Why the bucket is public
 
 The B2 bucket is public, so media is also reachable directly at

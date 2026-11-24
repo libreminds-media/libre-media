@@ -452,6 +452,33 @@ def main() -> int:
     if not items:
         die(f"{album_dir} produced no items -- is photos/ or videos/ empty?")
 
+    # Refuse to collapse a published album because its originals went missing.
+    #
+    # If the local sources are deleted to reclaim disk, this build finds zero
+    # photos. With nothing else in album.yaml that dies above -- but add a
+    # youtube id and it happily produces a one-item manifest, which publish
+    # then installs, replacing a published album of hundreds of photos with a
+    # single video tile. No error, and the B2 objects are orphaned rather than
+    # removed. Narrow check: sources empty AND the installed manifest has real
+    # media. A legitimate removal (make unpublish-photo) deletes the source too,
+    # so it never trips this.
+    installed = Path("web/albums") / f"{slug}.json"
+    if not photos and not videos and installed.is_file():
+        try:
+            prev = json.loads(installed.read_text()).get("items", [])
+        except (json.JSONDecodeError, OSError):
+            prev = []
+        prev_media = [i for i in prev if i.get("type") != "youtube"]
+        if prev_media:
+            die(f"{album_dir}/photos/ and videos/ are empty, but "
+                f"{installed} already publishes {len(prev_media)} media item(s).\n"
+                f"  Building now would replace that album with "
+                f"{len(items)} item(s) and orphan the uploaded media.\n"
+                f"  This is what happens when the local originals have been\n"
+                f"  deleted to reclaim disk. Either restore them to\n"
+                f"  {album_dir}/photos/, or if you really mean to take the album\n"
+                f"  down use: make unpublish SLUG={slug}")
+
     manifest = {
         "slug": slug,
         "title": meta["title"],
