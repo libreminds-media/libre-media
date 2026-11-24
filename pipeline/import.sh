@@ -140,6 +140,7 @@ fi
 cd "$(dirname "$0")/.."
 
 [ -f .env ] || die ".env not found"
+./pipeline/ensure_tools_image.sh
 CONF=".config/rclone/rclone.conf"
 [ -f "$CONF" ] || die "$CONF not found.
   OneDrive needs a one-time token. See README \"Importing from OneDrive\"."

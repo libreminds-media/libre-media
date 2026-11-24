@@ -36,6 +36,7 @@ warn() { echo "unpublish: warning: $*" >&2; }
 case "$SLUG" in */*|.*|"") die "invalid SLUG: $SLUG" ;; esac
 [ -f .env ] || die ".env not found"
 
+./pipeline/ensure_tools_image.sh
 BUCKET="$(grep -E '^B2_BUCKET=' .env | head -1 | cut -d= -f2-)"
 TTY_FLAG=(); [ -t 1 ] || TTY_FLAG=(-T)
 tools() { docker compose --profile tools run --rm "${TTY_FLAG[@]}" -e SLUG="$SLUG" tools -lc "$1"; }

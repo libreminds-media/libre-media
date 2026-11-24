@@ -53,6 +53,7 @@ fi
 # --- outer pass: on the host -----------------------------------------------
 cd "$(dirname "$0")/.."
 [ -f .env ] || die ".env not found"
+./pipeline/ensure_tools_image.sh
 
 TTY_FLAG=()
 [ -t 1 ] || TTY_FLAG=(-T)

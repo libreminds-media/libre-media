@@ -33,7 +33,7 @@ endif
 .PHONY: help up down restart logs check build publish publish-dry index \
         backup restore cache-stats cache-clear migrate-check shell \
         vendor-lightgallery tree env-check import import-dry onedrive-ls \
-        cache-purge unpublish unpublish-photo
+        cache-purge unpublish unpublish-photo tools-image
 
 help:
 	@echo "libre-media — make targets"
@@ -124,6 +124,12 @@ logs:
 
 # --- publishing ------------------------------------------------------------
 
+# Build the tools image only if it is missing. Every host-side entry point
+# calls this, so a pruned image costs a deliberate rebuild rather than
+# derailing whatever command noticed it. See pipeline/ensure_tools_image.sh.
+tools-image:
+	@./pipeline/ensure_tools_image.sh
+
 build: env-check
 	$(COMPOSE) --profile tools build tools
 
@@ -135,7 +141,7 @@ publish-dry: env-check
 	@test -n "$(SLUG)" || { echo "make: SLUG is required, e.g. make publish-dry SLUG=2025-my-event"; exit 1; }
 	SLUG="$(SLUG)" DRY=1 ./pipeline/publish.sh
 
-index: env-check
+index: env-check tools-image
 	@# The tools image's entrypoint is bash, so the script must be handed to
 	@# python3 explicitly -- passing the .py path alone makes bash try to
 	@# interpret Python as shell.
@@ -154,7 +160,7 @@ import-dry: env-check
 	SLUG="$(SLUG)" SRC="$(SRC)" DRY=1 ./pipeline/import.sh
 
 # Browse the OneDrive account so you can find the right SRC path.
-onedrive-ls: env-check
+onedrive-ls: env-check tools-image
 	$(COMPOSE) --profile tools run --rm -T tools -lc \
 	  'rclone lsd "onedrive:$(SRC)" 2>&1 | sed "s/^/  /"'
 
@@ -206,7 +212,7 @@ cache-clear:
 migrate-check:
 	@./pipeline/migrate_check.sh
 
-shell: env-check
+shell: env-check tools-image
 	$(COMPOSE) --profile tools run --rm tools
 
 # --- maintenance -----------------------------------------------------------

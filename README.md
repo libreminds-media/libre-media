@@ -728,6 +728,21 @@ running the exact line from `/root` with an empty environment.
 `backup.log` and `prune.log` are git-ignored and are pre-created owned by
 `libremedia`, so a root-run job appends rather than taking them over.
 
+**If the tools image has gone missing**, every entry point rebuilds it first
+(`pipeline/ensure_tools_image.sh`) and sends the build output to
+`.tools-build.log`, so `backup.log` keeps the two lines that matter:
+
+```
+==> libre-media-tools:latest is missing -- building it first (output: .tools-build.log)
+==> built libre-media-tools:latest in 68s
+```
+
+The image is built locally and never pushed, so `docker compose run` cannot
+pull it — without the guard compose tried, failed with "pull access denied",
+rebuilt from scratch, and dumped ~1,400 lines into whatever log was open. It
+has vanished three times with nothing in any crontab to explain it, so the
+guard exists rather than a request that someone stop pruning it.
+
 ### Checking the jobs work
 
 ```bash

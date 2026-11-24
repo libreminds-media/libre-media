@@ -16,6 +16,9 @@ inbox/*
 backup.log
 prune.log
 
+# Output of an automatic tools-image rebuild
+.tools-build.log
+
 # Dry-run markers for the unpublish targets
 .unpublish/
 

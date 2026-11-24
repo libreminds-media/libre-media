@@ -131,6 +131,7 @@ fi
 cd "$(dirname "$0")/.."
 
 [ -f .env ] || die ".env not found. cp .env.example .env && chmod 600 .env"
+./pipeline/ensure_tools_image.sh
 [ -d "inbox/${SLUG}" ] || die "inbox/${SLUG} does not exist"
 
 # --- refuse to publish on top of unrelated work ----------------------------

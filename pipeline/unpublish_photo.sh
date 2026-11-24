@@ -36,6 +36,7 @@ case "$ID"   in */*|.*|"") die "invalid ID: $ID" ;; esac
 [ -f .env ] || die ".env not found"
 [ -f "web/albums/${SLUG}.json" ] || die "no such album: web/albums/${SLUG}.json"
 
+./pipeline/ensure_tools_image.sh
 BUCKET="$(grep -E '^B2_BUCKET=' .env | head -1 | cut -d= -f2-)"
 MARKER="${MARKER_DIR}/${SLUG}.${ID}.dryrun"
 mkdir -p "$MARKER_DIR"

@@ -50,6 +50,7 @@ fi
 # --- outer pass: on the host -----------------------------------------------
 cd "$(dirname "$0")/.."
 [ -f .env ] || die ".env not found"
+./pipeline/ensure_tools_image.sh
 
 if [ "$TARGET" = "." ] && [ "$DRY" != "1" ]; then
   info "restoring IN PLACE over web/albums/ and inbox/"
