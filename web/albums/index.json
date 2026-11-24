@@ -1,6 +1,17 @@
 {
   "albums": [
     {
+      "slug": "2024-devopsdays-kerala",
+      "title": "DevOpsDays Kerala 2024",
+      "date": "2024-09-28",
+      "description": "DevOpsDays Kerala 2024, photographed by the volunteer team.",
+      "credit": "DevOpsDays Kerala volunteers",
+      "base": "events/2024-devopsdays-kerala/",
+      "count": 717,
+      "cover": "thumb/5521732ba916.webp",
+      "cover_absolute": false
+    },
+    {
       "slug": "2024-kcd-kerala",
       "title": "KCD Kerala 2024",
       "date": "2024-02-03",
