@@ -1,6 +1,17 @@
 {
   "albums": [
     {
+      "slug": "2025-kcd-bengaluru",
+      "title": "KCD Bengaluru 2025",
+      "date": "2025-07-07",
+      "description": null,
+      "credit": null,
+      "base": "events/2025-kcd-bengaluru/",
+      "count": 1653,
+      "cover": "thumb/32600c932a7b.webp",
+      "cover_absolute": false
+    },
+    {
       "slug": "2024-devopsdays-kerala",
       "title": "DevOpsDays Kerala 2024",
       "date": "2024-09-28",
